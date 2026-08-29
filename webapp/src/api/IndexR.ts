@@ -9,8 +9,10 @@ class IndexR extends Requests {
 	protected static get config(): AxiosRequestConfig {
 		const headers = new AxiosHeaders();
 		const token = cookie.load('token');
+		const csrfToken = cookie.load('csrftoken');
 		if (token) headers.set('Authorization', `Token ${token}`);
-		return {headers,}
+        if (csrfToken) headers.set('X-CSRFToken', csrfToken);
+        return {headers, paramsSerializer: {indexes: null}};
 	}
 
 	public static get(url: string, params: NonNullable<unknown> = {}, signal?: AbortSignal, pageInfo: PageInfo = {} as PageInfo) {
