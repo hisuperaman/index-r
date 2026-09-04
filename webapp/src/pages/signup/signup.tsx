@@ -1,7 +1,17 @@
 import {useEffect, useRef, useState} from "react";
 import {useNavigate} from "react-router";
+import {useForm} from "react-hook-form";
 import type {RegisterBody} from "@/definitions/RequestBody";
 import {useRegister} from "@/queries/user";
+import {Input} from "@/components/ui/input";
+import {Button} from "@/components/ui/button";
+
+type SignupFormValues = {
+    name: string;
+    email: string;
+    pass: string;
+    pass2: string;
+};
 
 export function Signup() {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -10,11 +20,13 @@ export function Signup() {
 
     const [filesCount, setFilesCount] = useState(1042817);
 
-    const [form, setForm] = useState({
-        name: "",
-        email: "",
-        pass: "",
-        pass2: "",
+    const form = useForm<SignupFormValues>({
+        defaultValues: {
+            name: "",
+            email: "",
+            pass: "",
+            pass2: "",
+        },
     });
 
     // ---- animated index-graph background ----
@@ -144,46 +156,35 @@ export function Signup() {
         return () => clearInterval(id);
     }, []);
 
-    const handleChange = (
-        e: React.ChangeEvent<HTMLInputElement>
-    ) => {
-        const {id, value} = e.target;
-
-        setForm((current) => ({
-            ...current,
-            [id]: value,
-        }));
-    };
-
-    const handleSubmit = () => {
-        if (!form.name.trim()) {
+    const handleSubmit = (values: SignupFormValues) => {
+        if (!values.name.trim()) {
             alert("Please enter your full name.");
             return;
         }
 
-        if (!form.email.trim()) {
+        if (!values.email.trim()) {
             alert("Please enter your email.");
             return;
         }
 
-        if (!form.pass) {
+        if (!values.pass) {
             alert("Please enter a password.");
             return;
         }
 
-        if (form.pass !== form.pass2) {
+        if (values.pass !== values.pass2) {
             alert("Passwords do not match.");
             return;
         }
 
-        const nameParts = form.name.trim().split(/\s+/);
+        const nameParts = values.name.trim().split(/\s+/);
 
         const data: RegisterBody = {
-            email: form.email.trim(),
+            email: values.email.trim(),
             first_name: nameParts[0] || "",
             last_name: nameParts.slice(1).join(" "),
-            password1: form.pass,
-            password2: form.pass2,
+            password1: values.pass,
+            password2: values.pass2,
         };
 
         register.mutate(data);
@@ -733,23 +734,19 @@ export function Signup() {
                             </div>
 
                             <form
-                                onSubmit={(e) => {
-                                    e.preventDefault();
-                                    handleSubmit();
-                                }}
+                                onSubmit={form.handleSubmit(handleSubmit)}
                             >
                                 <div className="ixr-field">
                                     <label htmlFor="name">
                                         Full name
                                     </label>
 
-                                    <input
+                                    <Input
                                         id="name"
                                         type="text"
                                         placeholder="Ava Chen"
                                         autoComplete="name"
-                                        value={form.name}
-                                        onChange={handleChange}
+                                        {...form.register("name")}
                                     />
                                 </div>
 
@@ -758,13 +755,12 @@ export function Signup() {
                                         Work email
                                     </label>
 
-                                    <input
+                                    <Input
                                         id="email"
                                         type="email"
                                         placeholder="ava@company.com"
                                         autoComplete="email"
-                                        value={form.email}
-                                        onChange={handleChange}
+                                        {...form.register("email")}
                                     />
                                 </div>
 
@@ -774,13 +770,12 @@ export function Signup() {
                                             Password
                                         </label>
 
-                                        <input
+                                        <Input
                                             id="pass"
                                             type="password"
                                             placeholder="••••••••"
                                             autoComplete="new-password"
-                                            value={form.pass}
-                                            onChange={handleChange}
+                                            {...form.register("pass")}
                                         />
                                     </div>
 
@@ -789,18 +784,17 @@ export function Signup() {
                                             Confirm
                                         </label>
 
-                                        <input
+                                        <Input
                                             id="pass2"
                                             type="password"
                                             placeholder="••••••••"
                                             autoComplete="new-password"
-                                            value={form.pass2}
-                                            onChange={handleChange}
+                                            {...form.register("pass2")}
                                         />
                                     </div>
                                 </div>
 
-                                <button
+                                <Button
                                     className="ixr-submit"
                                     type="submit"
                                     disabled={register.isPending}
@@ -808,7 +802,7 @@ export function Signup() {
                                     {register.isPending
                                         ? "Creating account..."
                                         : "Create account"}
-                                </button>
+                                </Button>
 
                                 {register.isError && (
                                     <div className="ixr-status ixr-error">
