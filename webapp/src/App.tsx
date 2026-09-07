@@ -14,7 +14,7 @@ function App() {
             />
 
             <Route
-                path="/signup"
+                path={Path.getExactRoutePath(RoutePaths.signup)}
                 element={<Signup/>}
             />
         </Routes>

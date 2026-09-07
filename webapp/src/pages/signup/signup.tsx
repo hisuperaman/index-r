@@ -1,26 +1,58 @@
-import {useEffect, useRef, useState} from "react";
+import {useEffect, useState} from "react";
 import {useNavigate} from "react-router";
 import {useForm} from "react-hook-form";
+import {z} from "zod";
+import {zodResolver} from "@hookform/resolvers/zod";
+
 import type {RegisterBody} from "@/definitions/RequestBody";
 import {useRegister} from "@/queries/user";
 import {Input} from "@/components/ui/input";
 import {Button} from "@/components/ui/button";
+import {AuthLayout} from "@/layouts/AuthLayout";
+import {Path} from "@/utils";
+import {RoutePaths} from "@/enums";
 
-type SignupFormValues = {
-    name: string;
-    email: string;
-    pass: string;
-    pass2: string;
-};
+const signupSchema = z
+    .object({
+        name: z
+            .string()
+            .trim()
+            .min(1, "Please enter your full name."),
+
+        email: z
+            .string()
+            .trim()
+            .min(1, "Please enter your email.")
+            .email("Please enter a valid email address."),
+
+        pass: z
+            .string()
+            .min(1, "Please enter a password."),
+
+        pass2: z
+            .string()
+            .min(1, "Please confirm your password."),
+    })
+    .refine(
+        (values) => values.pass === values.pass2,
+        {
+            message: "Passwords do not match.",
+            path: ["pass2"],
+        }
+    );
+
+type SignupFormValues = z.infer<typeof signupSchema>;
 
 export function Signup() {
-    const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const navigate = useNavigate();
     const register = useRegister();
 
-    const [filesCount, setFilesCount] = useState(1042817);
+    const [filesCount, setFilesCount] =
+        useState(1042817);
 
     const form = useForm<SignupFormValues>({
+        resolver: zodResolver(signupSchema),
+
         defaultValues: {
             name: "",
             email: "",
@@ -29,825 +61,664 @@ export function Signup() {
         },
     });
 
-    // ---- animated index-graph background ----
-    useEffect(() => {
-        const canvas = canvasRef.current;
+    const {
+        register: registerField,
+        handleSubmit,
+        formState: {errors},
+    } = form;
 
-        if (!canvas) return;
-
-        const context = canvas.getContext("2d");
-
-        if (!context) return;
-        const canvasElement = canvas;
-        const canvasContext = context;
-
-        const LINK_DIST = 130;
-        const reduceMotion = window.matchMedia(
-            "(prefers-reduced-motion: reduce)"
-        ).matches;
-
-        let W = 0;
-        let H = 0;
-
-        type Node = {
-            x: number;
-            y: number;
-            vx: number;
-            vy: number;
-            r: number;
-            pulse: number;
-        };
-
-        let nodes: Node[] = [];
-        let raf: number | undefined;
-
-        function resize() {
-            W = canvasElement.width = canvasElement.offsetWidth;
-            H = canvasElement.height = canvasElement.offsetHeight;
-
-            const count = Math.max(
-                35,
-                Math.min(110, Math.floor((W * H) / 16000))
-            );
-
-            nodes = Array.from({length: count}, () => ({
-                x: Math.random() * W,
-                y: Math.random() * H,
-                vx: (Math.random() - 0.5) * 0.28,
-                vy: (Math.random() - 0.5) * 0.28,
-                r: Math.random() * 1.4 + 0.6,
-                pulse: Math.random() * Math.PI * 2,
-            }));
-        }
-
-        function step() {
-            canvasContext.clearRect(0, 0, W, H);
-
-            for (const n of nodes) {
-                n.x += n.vx;
-                n.y += n.vy;
-
-                if (n.x < -20) n.x = W + 20;
-                if (n.x > W + 20) n.x = -20;
-                if (n.y < -20) n.y = H + 20;
-                if (n.y > H + 20) n.y = -20;
-
-                n.pulse += 0.015;
-            }
-
-            for (let i = 0; i < nodes.length; i++) {
-                for (let j = i + 1; j < nodes.length; j++) {
-                    const a = nodes[i];
-                    const b = nodes[j];
-
-                    const dx = a.x - b.x;
-                    const dy = a.y - b.y;
-                    const d = Math.sqrt(dx * dx + dy * dy);
-
-                    if (d < LINK_DIST) {
-                        const alpha = (1 - d / LINK_DIST) * 0.18;
-
-                        canvasContext.strokeStyle = `rgba(255,255,255,${alpha})`;
-                        canvasContext.lineWidth = 0.6;
-                        canvasContext.beginPath();
-                        canvasContext.moveTo(a.x, a.y);
-                        canvasContext.lineTo(b.x, b.y);
-                        canvasContext.stroke();
-                    }
-                }
-            }
-
-            for (const n of nodes) {
-                const glow = 0.35 + Math.sin(n.pulse) * 0.2;
-
-                canvasContext.beginPath();
-                canvasContext.fillStyle = `rgba(244,244,242,${glow})`;
-                canvasContext.arc(n.x, n.y, n.r, 0, Math.PI * 2);
-                canvasContext.fill();
-            }
-
-            if (!reduceMotion) {
-                raf = requestAnimationFrame(step);
-            }
-        }
-
-        resize();
-        step();
-
-        window.addEventListener("resize", resize);
-
-        return () => {
-            window.removeEventListener("resize", resize);
-
-            if (raf) {
-                cancelAnimationFrame(raf);
-            }
-        };
-    }, []);
-
-    // ---- live sources counter ----
+    // Live sources counter
     useEffect(() => {
         const id = setInterval(() => {
             setFilesCount(
-                (c) => c + Math.floor(Math.random() * 9) + 1
+                (count) =>
+                    count +
+                    Math.floor(Math.random() * 9) +
+                    1
             );
         }, 850);
 
         return () => clearInterval(id);
     }, []);
 
-    const handleSubmit = (values: SignupFormValues) => {
-        if (!values.name.trim()) {
-            alert("Please enter your full name.");
-            return;
-        }
-
-        if (!values.email.trim()) {
-            alert("Please enter your email.");
-            return;
-        }
-
-        if (!values.pass) {
-            alert("Please enter a password.");
-            return;
-        }
-
-        if (values.pass !== values.pass2) {
-            alert("Passwords do not match.");
-            return;
-        }
-
-        const nameParts = values.name.trim().split(/\s+/);
+    const onSubmit = (values: SignupFormValues) => {
+        const nameParts =
+            values.name.trim().split(/\s+/);
 
         const data: RegisterBody = {
             email: values.email.trim(),
-            first_name: nameParts[0] || "",
-            last_name: nameParts.slice(1).join(" "),
+
+            first_name:
+                nameParts[0] || "",
+
+            last_name:
+                nameParts.slice(1).join(" "),
+
             password1: values.pass,
+
             password2: values.pass2,
         };
 
-        register.mutate(data);
+        register.mutate(data, {
+          onSuccess: () => {
+            navigate(
+              Path.getExactRoutePath(RoutePaths.empty)
+            );
+          },
+        });
+    };
+
+    const goToLogin = () => {
+        navigate(
+            Path.getExactRoutePath(RoutePaths.login)
+        );
     };
 
     return (
-        <div className="ixr-root">
-            <style>{`
-                .ixr-root{
-                  --bg:#08090a;
-                  --panel:#111213;
-                  --panel-2:#0d0e0f;
-                  --border:#2a2b2c;
-                  --border-soft:#1c1d1e;
-                  --ink:#f4f4f2;
-                  --ink-dim:#9a9b98;
-                  --ink-faint:#606160;
-                  --white:#ffffff;
-
-                  position:relative;
-                  min-height:100vh;
-                  width:100%;
-                  background:var(--bg);
-                  color:var(--ink);
-                  font-family:'Inter', sans-serif;
-                  overflow:hidden;
-                }
-
-                .ixr-root *{ box-sizing:border-box; }
-
-                .ixr-canvas{
-                  position:absolute;
-                  inset:0;
-                  width:100%;
-                  height:100%;
-                  display:block;
-                }
-
-                .ixr-scrim{
-                  position:absolute;
-                  inset:0;
-                  background:
-                    radial-gradient(
-                      ellipse 900px 700px at 78% 45%,
-                      rgba(8,9,10,0.55) 0%,
-                      rgba(8,9,10,0.15) 45%,
-                      transparent 70%
-                    ),
-                    linear-gradient(
-                      180deg,
-                      rgba(8,9,10,0.75) 0%,
-                      rgba(8,9,10,0.15) 18%,
-                      rgba(8,9,10,0.15) 82%,
-                      rgba(8,9,10,0.85) 100%
-                    );
-                  pointer-events:none;
-                }
-
-                .ixr-shell{
-                  position:relative;
-                  z-index:2;
-                  min-height:100vh;
-                  display:flex;
-                  flex-direction:column;
-                }
-
-                .ixr-header{
-                  display:flex;
-                  align-items:center;
-                  justify-content:space-between;
-                  padding:28px 48px;
-                }
-
-                .ixr-brand{
-                  display:flex;
-                  align-items:baseline;
-                  gap:9px;
-                  font-family:'Space Grotesk', sans-serif;
-                  font-weight:600;
-                  font-size:19px;
-                  letter-spacing:0.01em;
-                  background:none;
-                  border:none;
-                  color:var(--ink);
-                  cursor:pointer;
-                  padding:0;
-                }
-
-                .ixr-brand .mark{
-                  width:9px;
-                  height:9px;
-                  background:var(--white);
-                  display:inline-block;
-                  transform:rotate(45deg);
-                }
-
-                .ixr-brand .r{
-                  color:var(--ink-dim);
-                  font-weight:500;
-                }
-
-                .ixr-header nav{
-                  font-family:'JetBrains Mono', monospace;
-                  font-size:12.5px;
-                  color:var(--ink-faint);
-                }
-
-                .ixr-header nav button{
-                  background:none;
-                  border:none;
-                  font-family:'JetBrains Mono', monospace;
-                  font-size:12.5px;
-                  color:var(--ink-dim);
-                  cursor:pointer;
-                  border-bottom:1px solid transparent;
-                  transition:border-color .15s ease, color .15s ease;
-                  padding:0;
-                }
-
-                .ixr-header nav button:hover{
-                  color:var(--ink);
-                  border-color:var(--ink-dim);
-                }
-
-                .ixr-main{
-                  flex:1;
-                  display:grid;
-                  grid-template-columns:1.15fr 0.85fr;
-                  align-items:center;
-                  gap:40px;
-                  padding:20px 48px 56px;
-                }
-
-                .ixr-copy{
-                  max-width:520px;
-                  padding-right:20px;
-                }
-
-                .ixr-eyebrow{
-                  display:flex;
-                  align-items:center;
-                  gap:10px;
-                  font-family:'JetBrains Mono', monospace;
-                  font-size:12px;
-                  color:var(--ink-faint);
-                  margin-bottom:26px;
-                }
-
-                .ixr-live-dot{
-                  width:6px;
-                  height:6px;
-                  border-radius:50%;
-                  background:var(--white);
-                  animation:ixr-pulse 2.2s ease-out infinite;
-                }
-
-                @keyframes ixr-pulse{
-                  0%{
-                    box-shadow:0 0 0 0 rgba(255,255,255,0.35);
-                  }
-                  70%{
-                    box-shadow:0 0 0 7px rgba(255,255,255,0);
-                  }
-                  100%{
-                    box-shadow:0 0 0 0 rgba(255,255,255,0);
-                  }
-                }
-
-                .ixr-copy h1{
-                  font-family:'Space Grotesk', sans-serif;
-                  font-weight:600;
-                  font-size:clamp(38px, 4.4vw, 60px);
-                  line-height:1.04;
-                  letter-spacing:-0.01em;
-                  margin:0 0 22px;
-                }
-
-                .ixr-copy h1 em{
-                  font-style:normal;
-                  color:var(--ink-dim);
-                }
-
-                .ixr-lede{
-                  font-size:16.5px;
-                  line-height:1.6;
-                  color:var(--ink-dim);
-                  max-width:440px;
-                  margin:0 0 38px;
-                }
-
-                .ixr-stat-row{
-                  display:flex;
-                  gap:36px;
-                  padding-top:26px;
-                  border-top:1px solid var(--border-soft);
-                }
-
-                .ixr-stat{
-                  font-family:'JetBrains Mono', monospace;
-                }
-
-                .ixr-stat .num{
-                  font-size:20px;
-                  color:var(--ink);
-                  font-weight:500;
-                  letter-spacing:-0.01em;
-                }
-
-                .ixr-stat .label{
-                  font-size:11.5px;
-                  color:var(--ink-faint);
-                  margin-top:5px;
-                }
-
-                .ixr-card-wrap{
-                  display:flex;
-                  justify-content:center;
-                }
-
-                .ixr-card{
-                  width:100%;
-                  max-width:392px;
-                  background:linear-gradient(
-                    180deg,
-                    var(--panel) 0%,
-                    var(--panel-2) 100%
-                  );
-                  border:1px solid var(--border);
-                  padding:38px 34px 32px;
-                  position:relative;
-                }
-
-                .ixr-card::before{
-                  content:"";
-                  position:absolute;
-                  top:-1px;
-                  left:-1px;
-                  width:16px;
-                  height:16px;
-                  border-top:1px solid var(--white);
-                  border-left:1px solid var(--white);
-                  opacity:0.55;
-                }
-
-                .ixr-card::after{
-                  content:"";
-                  position:absolute;
-                  bottom:-1px;
-                  right:-1px;
-                  width:16px;
-                  height:16px;
-                  border-bottom:1px solid var(--white);
-                  border-right:1px solid var(--white);
-                  opacity:0.55;
-                }
-
-                .ixr-card h2{
-                  font-family:'Space Grotesk', sans-serif;
-                  font-size:23px;
-                  font-weight:600;
-                  margin:0 0 6px;
-                }
-
-                .ixr-card .sub{
-                  font-size:13.5px;
-                  color:var(--ink-faint);
-                  margin:0 0 28px;
-                }
-
-                .ixr-field{
-                  margin-bottom:18px;
-                }
-
-                .ixr-field label{
-                  display:block;
-                  font-family:'JetBrains Mono', monospace;
-                  font-size:11px;
-                  color:var(--ink-faint);
-                  margin-bottom:8px;
-                  letter-spacing:0.01em;
-                }
-
-                .ixr-field input{
-                  width:100%;
-                  background:#0a0b0c;
-                  border:1px solid var(--border);
-                  color:var(--ink);
-                  font-family:'Inter', sans-serif;
-                  font-size:14.5px;
-                  padding:12px 13px;
-                  outline:none;
-                  transition:border-color .15s ease, background .15s ease;
-                }
-
-                .ixr-field input::placeholder{
-                  color:#4c4d4c;
-                }
-
-                .ixr-field input:focus{
-                  border-color:var(--ink-dim);
-                  background:#0d0e0f;
-                }
-
-                .ixr-field input:focus-visible{
-                  outline:1.5px solid var(--white);
-                  outline-offset:1px;
-                }
-
-                .ixr-row2{
-                  display:flex;
-                  gap:12px;
-                }
-
-                .ixr-row2 .ixr-field{
-                  flex:1;
-                }
-
-                .ixr-submit{
-                  width:100%;
-                  background:var(--white);
-                  color:#0a0a0a;
-                  border:none;
-                  font-family:'Inter', sans-serif;
-                  font-weight:600;
-                  font-size:14.5px;
-                  padding:13px 0;
-                  margin-top:8px;
-                  cursor:pointer;
-                  transition:background .15s ease, transform .1s ease;
-                }
-
-                .ixr-submit:hover{
-                  background:#e4e4e2;
-                }
-
-                .ixr-submit:active{
-                  transform:scale(0.995);
-                }
-
-                .ixr-submit:focus-visible{
-                  outline:2px solid var(--white);
-                  outline-offset:2px;
-                }
-
-                .ixr-submit:disabled{
-                  opacity:0.6;
-                  cursor:not-allowed;
-                }
-
-                .ixr-fineprint{
-                  font-size:11.5px;
-                  color:var(--ink-faint);
-                  line-height:1.55;
-                  margin-top:16px;
-                }
-
-                .ixr-fineprint button{
-                  background:none;
-                  border:none;
-                  padding:0;
-                  cursor:pointer;
-                  color:var(--ink-dim);
-                  font-size:11.5px;
-                  font-family:'Inter', sans-serif;
-                }
-
-                .ixr-divider{
-                  display:flex;
-                  align-items:center;
-                  gap:12px;
-                  margin:24px 0 18px;
-                }
-
-                .ixr-divider .line{
-                  flex:1;
-                  height:1px;
-                  background:var(--border-soft);
-                }
-
-                .ixr-divider span{
-                  font-family:'JetBrains Mono', monospace;
-                  font-size:10.5px;
-                  color:var(--ink-faint);
-                }
-
-                .ixr-switch{
-                  text-align:center;
-                  font-size:13.5px;
-                  color:var(--ink-faint);
-                }
-
-                .ixr-switch button{
-                  background:none;
-                  border:none;
-                  padding:0;
-                  cursor:pointer;
-                  color:var(--ink);
-                  font-size:13.5px;
-                  font-family:'Inter', sans-serif;
-                  border-bottom:1px solid var(--ink-dim);
-                }
-
-                .ixr-status{
-                  margin-top:12px;
-                  font-size:12px;
-                  line-height:1.4;
-                  font-family:'JetBrains Mono', monospace;
-                }
-
-                .ixr-error{
-                  color:#ff8f8f;
-                }
-
-                .ixr-success{
-                  color:#a8e6a8;
-                }
-
-                @media (max-width: 880px){
-                  .ixr-main{
-                    grid-template-columns:1fr;
-                    padding:10px 24px 40px;
-                  }
-
-                  .ixr-header{
-                    padding:22px 24px;
-                  }
-
-                  .ixr-copy{
-                    max-width:100%;
-                    padding-right:0;
-                    order:2;
-                  }
-
-                  .ixr-card-wrap{
-                    order:1;
-                    margin-bottom:8px;
-                  }
-
-                  .ixr-stat-row{
-                    display:none;
-                  }
-
-                  .ixr-copy h1{
-                    font-size:clamp(30px, 8vw, 40px);
-                  }
-                }
-
-                @media (prefers-reduced-motion: reduce){
-                  .ixr-live-dot{
-                    animation:none;
-                  }
-
-                  .ixr-canvas{
-                    display:none;
-                  }
-                }
-            `}</style>
-
-            <link rel="preconnect" href="https://fonts.googleapis.com"/>
-            <link
-                href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
-                rel="stylesheet"
-            />
-
-            <canvas
-                ref={canvasRef}
-                className="ixr-canvas"
-            />
-
-            <div className="ixr-scrim"/>
-
-            <div className="ixr-shell">
-                <header className="ixr-header">
-                    <button
-                        className="ixr-brand"
-                        onClick={() => navigate("/login")}
-                        type="button"
+        <AuthLayout>
+            <div
+                className="
+                    mx-auto grid w-full max-w-[1280px]
+                    grid-cols-1 items-center gap-16
+                    px-7 pb-12 pt-4
+                    sm:px-12
+                    lg:grid-cols-[1.15fr_0.85fr]
+                    lg:gap-10
+                    xl:px-16
+                "
+            >
+                {/* LEFT SIDE */}
+                <section
+                    className="
+                        max-w-[680px]
+                        lg:pb-4
+                    "
+                >
+                    {/* Eyebrow */}
+                    <div
+                        className="
+                            mb-6 flex items-center gap-2
+                            font-[JetBrains_Mono,monospace]
+                            text-[10px]
+                            uppercase
+                            tracking-[0.14em]
+                            text-[#9a9b98]
+                        "
                     >
-                        <span className="mark"/>
-                        Index<span className="r">R</span>
-                    </button>
+                        <span className="relative flex h-[6px] w-[6px]">
+                            <span
+                                className="
+                                    absolute inline-flex
+                                    h-full w-full rounded-full
+                                    bg-[#f4f4f2]
+                                    opacity-60
+                                    motion-safe:animate-ping
+                                    motion-reduce:hidden
+                                "
+                            />
 
-                    <nav>
-                        <button
-                            onClick={() => navigate("/login")}
-                            type="button"
+                            <span
+                                className="
+                                    relative inline-flex
+                                    h-[6px] w-[6px]
+                                    rounded-full
+                                    bg-[#f4f4f2]
+                                "
+                            />
+                        </span>
+
+                        watching your research topics — live
+                    </div>
+
+                    {/* Heading */}
+                    <h1
+                        className="
+                            max-w-[700px]
+                            font-[Space_Grotesk,sans-serif]
+                            text-[clamp(44px,5.4vw,78px)]
+                            font-medium
+                            leading-[0.97]
+                            tracking-[-0.055em]
+                            text-[#f4f4f2]
+                        "
+                    >
+                        Find the right paper.
+                        <br />
+                        Never miss the{" "}
+                        <em
+                            className="
+                                font-normal
+                                text-[#9a9b98]
+                            "
                         >
-                            Already tracking research? Log in →
-                        </button>
-                    </nav>
-                </header>
+                            next
+                        </em>{" "}
+                        one.
+                    </h1>
 
-                <main className="ixr-main">
-                    <div className="ixr-copy">
-                        <div className="ixr-eyebrow">
-                            <span className="ixr-live-dot"/>
-                            watching your research topics — live
-                        </div>
+                    {/* Description */}
+                    <p
+                        className="
+                            mt-7 max-w-[590px]
+                            font-[Inter,sans-serif]
+                            text-[14px]
+                            leading-[1.75]
+                            text-[#9a9b98]
+                        "
+                    >
+                        IndexR searches only confirmed sources —
+                        published papers, verified datasets,
+                        peer-reviewed work — and surfaces what's
+                        actually relevant to your research. When
+                        something new lands on a topic you're tracking,
+                        it tells you first.
+                    </p>
 
-                        <h1>
-                            Find the right paper.
-                            <br/>
-                            Never miss the <em>next</em> one.
-                        </h1>
-
-                        <p className="ixr-lede">
-                            IndexR searches only confirmed sources —
-                            published papers, verified datasets,
-                            peer-reviewed work — and surfaces what's
-                            actually relevant to your research. When
-                            something new lands on a topic you're tracking,
-                            it tells you first.
-                        </p>
-
-                        <div className="ixr-stat-row">
-                            <div className="ixr-stat">
-                                <div className="num">
-                                    {filesCount.toLocaleString("en-US")}
-                                </div>
-                                <div className="label">
-                                    sources verified
-                                </div>
-                            </div>
-
-                            <div className="ixr-stat">
-                                <div className="num">18,204</div>
-                                <div className="label">
-                                    topics tracked live
-                                </div>
-                            </div>
-
-                            <div className="ixr-stat">
-                                <div className="num">0</div>
-                                <div className="label">
-                                    unverified sources used
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="ixr-card-wrap">
-                        <div className="ixr-card">
-                            <h2>Create your account</h2>
-
-                            <div className="sub">
-                                Start tracking your research in under two minutes.
-                            </div>
-
-                            <form
-                                onSubmit={form.handleSubmit(handleSubmit)}
+                    {/* Stats */}
+                    <div
+                        className="
+                            mt-9 flex flex-wrap
+                            items-center gap-x-8 gap-y-4
+                            border-t border-[#2a2b2c]
+                            pt-5
+                        "
+                    >
+                        <div>
+                            <div
+                                className="
+                                    font-[JetBrains_Mono,monospace]
+                                    text-[18px]
+                                    font-medium
+                                    tracking-[-0.03em]
+                                    text-[#f4f4f2]
+                                "
                             >
-                                <div className="ixr-field">
-                                    <label htmlFor="name">
-                                        Full name
-                                    </label>
-
-                                    <Input
-                                        id="name"
-                                        type="text"
-                                        placeholder="Ava Chen"
-                                        autoComplete="name"
-                                        {...form.register("name")}
-                                    />
-                                </div>
-
-                                <div className="ixr-field">
-                                    <label htmlFor="email">
-                                        Work email
-                                    </label>
-
-                                    <Input
-                                        id="email"
-                                        type="email"
-                                        placeholder="ava@company.com"
-                                        autoComplete="email"
-                                        {...form.register("email")}
-                                    />
-                                </div>
-
-                                <div className="ixr-row2">
-                                    <div className="ixr-field">
-                                        <label htmlFor="pass">
-                                            Password
-                                        </label>
-
-                                        <Input
-                                            id="pass"
-                                            type="password"
-                                            placeholder="••••••••"
-                                            autoComplete="new-password"
-                                            {...form.register("pass")}
-                                        />
-                                    </div>
-
-                                    <div className="ixr-field">
-                                        <label htmlFor="pass2">
-                                            Confirm
-                                        </label>
-
-                                        <Input
-                                            id="pass2"
-                                            type="password"
-                                            placeholder="••••••••"
-                                            autoComplete="new-password"
-                                            {...form.register("pass2")}
-                                        />
-                                    </div>
-                                </div>
-
-                                <Button
-                                    className="ixr-submit"
-                                    type="submit"
-                                    disabled={register.isPending}
-                                >
-                                    {register.isPending
-                                        ? "Creating account..."
-                                        : "Create account"}
-                                </Button>
-
-                                {register.isError && (
-                                    <div className="ixr-status ixr-error">
-                                        Registration failed. Please check
-                                        your details and try again.
-                                    </div>
-                                )}
-
-                                {register.isSuccess && (
-                                    <div className="ixr-status ixr-success">
-                                        {register.data.detail}
-                                    </div>
-                                )}
-
-                                <div className="ixr-fineprint">
-                                    By continuing you agree to IndexR's{" "}
-                                    <button type="button">
-                                        Terms
-                                    </button>{" "}
-                                    and{" "}
-                                    <button type="button">
-                                        Privacy Policy
-                                    </button>.
-                                </div>
-                            </form>
-
-                            <div className="ixr-divider">
-                                <div className="line"/>
-                                <span>OR</span>
-                                <div className="line"/>
+                                {filesCount.toLocaleString()}
                             </div>
 
-                            <div className="ixr-switch">
-                                Already have an account?{" "}
-                                <button
-                                    type="button"
-                                    onClick={() => navigate("/login")}
-                                >
-                                    Log in
-                                </button>
+                            <div
+                                className="
+                                    mt-1
+                                    font-[JetBrains_Mono,monospace]
+                                    text-[9px]
+                                    uppercase
+                                    tracking-[0.12em]
+                                    text-[#606160]
+                                "
+                            >
+                                sources indexed
+                            </div>
+                        </div>
+
+                        <div
+                            className="
+                                h-8 w-px
+                                bg-[#2a2b2c]
+                            "
+                        />
+
+                        <div>
+                            <div
+                                className="
+                                    font-[JetBrains_Mono,monospace]
+                                    text-[18px]
+                                    font-medium
+                                    tracking-[-0.03em]
+                                    text-[#f4f4f2]
+                                "
+                            >
+                                2.4M+
+                            </div>
+
+                            <div
+                                className="
+                                    mt-1
+                                    font-[JetBrains_Mono,monospace]
+                                    text-[9px]
+                                    uppercase
+                                    tracking-[0.12em]
+                                    text-[#606160]
+                                "
+                            >
+                                papers tracked
+                            </div>
+                        </div>
+
+                        <div
+                            className="
+                                h-8 w-px
+                                bg-[#2a2b2c]
+                            "
+                        />
+
+                        <div>
+                            <div
+                                className="
+                                    font-[JetBrains_Mono,monospace]
+                                    text-[18px]
+                                    font-medium
+                                    tracking-[-0.03em]
+                                    text-[#f4f4f2]
+                                "
+                            >
+                                12k+
+                            </div>
+
+                            <div
+                                className="
+                                    mt-1
+                                    font-[JetBrains_Mono,monospace]
+                                    text-[9px]
+                                    uppercase
+                                    tracking-[0.12em]
+                                    text-[#606160]
+                                "
+                            >
+                                researchers
                             </div>
                         </div>
                     </div>
-                </main>
+                </section>
+
+                {/* SIGNUP CARD */}
+                <section
+                    className="
+                        relative w-full max-w-[392px]
+                        justify-self-center
+                        lg:justify-self-end
+                    "
+                >
+                    <div
+                        className="
+                            relative
+                            border border-[#2a2b2c]
+                            bg-[#111213]/95
+                            px-7 py-8
+                            shadow-[0_25px_80px_rgba(0,0,0,0.3)]
+                            before:absolute before:left-[-1px]
+                            before:top-[-1px]
+                            before:h-4 before:w-4
+                            before:border-l before:border-t
+                            before:border-[#f4f4f2]/60
+                            after:absolute after:bottom-[-1px]
+                            after:right-[-1px]
+                            after:h-4 after:w-4
+                            after:border-b after:border-r
+                            after:border-[#f4f4f2]/60
+                            sm:px-8
+                        "
+                    >
+                        {/* Card heading */}
+                        <h2
+                            className="
+                                font-[Space_Grotesk,sans-serif]
+                                text-[25px]
+                                font-medium
+                                tracking-[-0.04em]
+                                text-[#f4f4f2]
+                            "
+                        >
+                            Create your account
+                        </h2>
+
+                        <div
+                            className="
+                                mt-2
+                                font-[Inter,sans-serif]
+                                text-[12px]
+                                leading-5
+                                text-[#606160]
+                            "
+                        >
+                            Start tracking your research
+                            in under two minutes.
+                        </div>
+
+                        <form
+                            onSubmit={handleSubmit(onSubmit)}
+                            className="mt-7"
+                        >
+                            {/* Full name */}
+                            <div className="mb-5">
+                                <label
+                                    htmlFor="name"
+                                    className="
+                                        mb-2 block
+                                        font-[JetBrains_Mono,monospace]
+                                        text-[9px]
+                                        uppercase
+                                        tracking-[0.12em]
+                                        text-[#9a9b98]
+                                    "
+                                >
+                                    Full name
+                                </label>
+
+                                <Input
+                                    id="name"
+                                    type="text"
+                                    autoComplete="name"
+                                    placeholder="Jane Smith"
+                                    {...registerField("name")}
+                                    className="
+                                        h-11 rounded-none
+                                        border-[#2a2b2c]
+                                        bg-[#0d0e0f]
+                                        px-3
+                                        font-[Inter,sans-serif]
+                                        text-[13px]
+                                        text-[#f4f4f2]
+                                        placeholder:text-[#606160]
+                                        focus-visible:border-[#9a9b98]
+                                        focus-visible:ring-0
+                                    "
+                                />
+
+                                {errors.name && (
+                                    <p
+                                        className="
+                                            mt-1.5
+                                            font-[Inter,sans-serif]
+                                            text-[10px]
+                                            text-[#9a9b98]
+                                        "
+                                    >
+                                        {errors.name.message}
+                                    </p>
+                                )}
+                            </div>
+
+                            {/* Email */}
+                            <div className="mb-5">
+                                <label
+                                    htmlFor="email"
+                                    className="
+                                        mb-2 block
+                                        font-[JetBrains_Mono,monospace]
+                                        text-[9px]
+                                        uppercase
+                                        tracking-[0.12em]
+                                        text-[#9a9b98]
+                                    "
+                                >
+                                    Email
+                                </label>
+
+                                <Input
+                                    id="email"
+                                    type="email"
+                                    autoComplete="email"
+                                    placeholder="jane@example.com"
+                                    {...registerField("email")}
+                                    className="
+                                        h-11 rounded-none
+                                        border-[#2a2b2c]
+                                        bg-[#0d0e0f]
+                                        px-3
+                                        font-[Inter,sans-serif]
+                                        text-[13px]
+                                        text-[#f4f4f2]
+                                        placeholder:text-[#606160]
+                                        focus-visible:border-[#9a9b98]
+                                        focus-visible:ring-0
+                                    "
+                                />
+
+                                {errors.email && (
+                                    <p
+                                        className="
+                                            mt-1.5
+                                            font-[Inter,sans-serif]
+                                            text-[10px]
+                                            text-[#9a9b98]
+                                        "
+                                    >
+                                        {errors.email.message}
+                                    </p>
+                                )}
+                            </div>
+
+                            {/* Password */}
+                            <div className="mb-5">
+                                <label
+                                    htmlFor="password"
+                                    className="
+                                        mb-2 block
+                                        font-[JetBrains_Mono,monospace]
+                                        text-[9px]
+                                        uppercase
+                                        tracking-[0.12em]
+                                        text-[#9a9b98]
+                                    "
+                                >
+                                    Password
+                                </label>
+
+                                <Input
+                                    id="password"
+                                    type="password"
+                                    autoComplete="new-password"
+                                    placeholder="••••••••"
+                                    {...registerField("pass")}
+                                    className="
+                                        h-11 rounded-none
+                                        border-[#2a2b2c]
+                                        bg-[#0d0e0f]
+                                        px-3
+                                        font-[Inter,sans-serif]
+                                        text-[13px]
+                                        text-[#f4f4f2]
+                                        placeholder:text-[#606160]
+                                        focus-visible:border-[#9a9b98]
+                                        focus-visible:ring-0
+                                    "
+                                />
+
+                                {errors.pass && (
+                                    <p
+                                        className="
+                                            mt-1.5
+                                            font-[Inter,sans-serif]
+                                            text-[10px]
+                                            text-[#9a9b98]
+                                        "
+                                    >
+                                        {errors.pass.message}
+                                    </p>
+                                )}
+                            </div>
+
+                            {/* Confirm password */}
+                            <div className="mb-6">
+                                <label
+                                    htmlFor="password-confirm"
+                                    className="
+                                        mb-2 block
+                                        font-[JetBrains_Mono,monospace]
+                                        text-[9px]
+                                        uppercase
+                                        tracking-[0.12em]
+                                        text-[#9a9b98]
+                                    "
+                                >
+                                    Confirm password
+                                </label>
+
+                                <Input
+                                    id="password-confirm"
+                                    type="password"
+                                    autoComplete="new-password"
+                                    placeholder="••••••••"
+                                    {...registerField("pass2")}
+                                    className="
+                                        h-11 rounded-none
+                                        border-[#2a2b2c]
+                                        bg-[#0d0e0f]
+                                        px-3
+                                        font-[Inter,sans-serif]
+                                        text-[13px]
+                                        text-[#f4f4f2]
+                                        placeholder:text-[#606160]
+                                        focus-visible:border-[#9a9b98]
+                                        focus-visible:ring-0
+                                    "
+                                />
+
+                                {errors.pass2 && (
+                                    <p
+                                        className="
+                                            mt-1.5
+                                            font-[Inter,sans-serif]
+                                            text-[10px]
+                                            text-[#9a9b98]
+                                        "
+                                    >
+                                        {errors.pass2.message}
+                                    </p>
+                                )}
+                            </div>
+
+                            {/* Submit */}
+                            <Button
+                                type="submit"
+                                disabled={register.isPending}
+                                className="
+                                    h-11 w-full rounded-none
+                                    bg-[#f4f4f2]
+                                    font-[Inter,sans-serif]
+                                    text-[12px]
+                                    font-semibold
+                                    text-[#08090a]
+                                    transition-opacity
+                                    hover:bg-[#f4f4f2]
+                                    hover:opacity-90
+                                    disabled:cursor-not-allowed
+                                    disabled:opacity-50
+                                "
+                            >
+                                {register.isPending
+                                    ? "Creating account..."
+                                    : "Create account"}
+                            </Button>
+
+                            {/* Terms */}
+                            <div
+                                className="
+                                    mt-4
+                                    text-center
+                                    font-[Inter,sans-serif]
+                                    text-[9px]
+                                    leading-4
+                                    text-[#606160]
+                                "
+                            >
+                                By creating an account, you agree to
+                                our{" "}
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    className="
+                                        h-auto rounded-none
+                                        p-0
+                                        font-[Inter,sans-serif]
+                                        text-[9px]
+                                        text-[#9a9b98]
+                                        underline
+                                        underline-offset-2
+                                        hover:bg-transparent
+                                        hover:text-[#f4f4f2]
+                                    "
+                                >
+                                    Terms
+                                </Button>{" "}
+                                and{" "}
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    className="
+                                        h-auto rounded-none
+                                        p-0
+                                        font-[Inter,sans-serif]
+                                        text-[9px]
+                                        text-[#9a9b98]
+                                        underline
+                                        underline-offset-2
+                                        hover:bg-transparent
+                                        hover:text-[#f4f4f2]
+                                    "
+                                >
+                                    Privacy Policy
+                                </Button>
+                                .
+                            </div>
+                        </form>
+
+                        {/* Divider */}
+                        <div
+                            className="
+                                my-6 flex items-center gap-3
+                            "
+                        >
+                            <div
+                                className="
+                                    h-px flex-1
+                                    bg-[#2a2b2c]
+                                "
+                            />
+
+                            <span
+                                className="
+                                    font-[JetBrains_Mono,monospace]
+                                    text-[8px]
+                                    uppercase
+                                    tracking-[0.12em]
+                                    text-[#606160]
+                                "
+                            >
+                                or
+                            </span>
+
+                            <div
+                                className="
+                                    h-px flex-1
+                                    bg-[#2a2b2c]
+                                "
+                            />
+                        </div>
+
+                        {/* Login switch */}
+                        <div
+                            className="
+                                text-center
+                                font-[Inter,sans-serif]
+                                text-[11px]
+                                text-[#606160]
+                            "
+                        >
+                            Already have an account?
+
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                onClick={goToLogin}
+                                className="
+                                    ml-1 h-auto rounded-none
+                                    p-0
+                                    font-[Inter,sans-serif]
+                                    text-[11px]
+                                    text-[#f4f4f2]
+                                    hover:bg-transparent
+                                    hover:text-[#f4f4f2]
+                                    hover:underline
+                                    hover:underline-offset-2
+                                "
+                            >
+                                Log in
+                            </Button>
+                        </div>
+                    </div>
+                </section>
             </div>
-        </div>
+        </AuthLayout>
     );
 }
