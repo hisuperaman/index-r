@@ -1,15 +1,16 @@
-import '@/App.css';
-import {Route, Routes} from "react-router";
-import {Path} from "@/utils";
-import {RoutePaths} from "@/enums";
-import {Home} from "@/pages";
+import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
+import { Home } from "./pages/home";
+import { Login } from "./pages/login";
 
 function App() {
-	return (
-		<Routes>
-			<Route path={Path.getExactRoutePath(RoutePaths.empty)} element={<Home/>}/>
-		</Routes>
-	)
+    return (
+        <BrowserRouter>
+            <Routes>
+                <Route path="/" element={<Home />} />
+                <Route path="/login" element={<Login />} />
+            </Routes>
+        </BrowserRouter>
+    );
 }
 
 export default App;
