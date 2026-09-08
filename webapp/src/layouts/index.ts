@@ -1,1 +1,1 @@
-// react router layouts goes here
+export * from './AuthLayout.tsx';
