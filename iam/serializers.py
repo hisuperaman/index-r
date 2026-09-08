@@ -8,7 +8,7 @@ from enums.User import UserField
 class CustomRegisterSerializer(RegisterSerializer):
 	username = None
 	first_name = CharField(required=True, max_length=150)
-	last_name = CharField(required=True, max_length=150)
+	last_name = CharField(required=False, max_length=150, allow_blank=True)
 
 	def validate_first_name(self, value: str) -> str:
 		return value.strip()
