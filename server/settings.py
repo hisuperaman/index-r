@@ -50,6 +50,8 @@ INSTALLED_APPS = [
 	'allauth.socialaccount.providers.google',
 
 	'iam',
+    'papers',
+    'server'
 ]
 
 MIDDLEWARE = [
