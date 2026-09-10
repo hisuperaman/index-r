@@ -1,10 +1,10 @@
-from enums.paper import SourceType
-from django.core.validators import MinValueValidator, MaxValueValidator 
+from enums.paper import SourceType, DatePrecision
+from django.core.validators import MinValueValidator, MaxValueValidator
 from django.contrib.postgres.search import SearchVectorField
 from django.contrib.postgres.indexes import GinIndex
 from django.db.models import (
     CharField, TextField, DateField, 
-    ForeignKey, ManyToManyField, PositiveIntegerField,PositiveSmallIntegerField, 
+    ForeignKey, ManyToManyField, PositiveIntegerField, 
     BooleanField,JSONField,Index, Q,F,CheckConstraint,UniqueConstraint, CASCADE,
 )
 from server.models import BaseModel
@@ -19,17 +19,19 @@ class Author(BaseModel):
         return self.name
     
 class Paper(BaseModel):
-    source = CharField(max_length=50, choices=SourceType.choices, db_index=True)
+    source = CharField(max_length=50, choices=SourceType.choices)
     external_id = CharField(max_length=255)
 
     title = TextField()  
     abstract = TextField(blank=True, null=True)  
     pdf_url = TextField()  
-    publication_date  = DateField(blank=True, null=True)
-    publication_month = PositiveSmallIntegerField(blank=True, null=True,choices=[(i, i) for i in range(1, 13)], )
-    publication_year = PositiveSmallIntegerField(
-    blank=True, null=True,
-    validators=[MinValueValidator(1900), MaxValueValidator(2100)],)
+    publication_date = DateField(blank=True, null=True)
+    publication_date_precision = CharField(
+        max_length=5,
+        choices=DatePrecision.choices,
+        blank=True, null=True,
+    )
+   
     authors = ManyToManyField(
         Author,
         through="PaperAuthor",
@@ -41,9 +43,29 @@ class Paper(BaseModel):
                 fields=["source", "external_id"],
                 name="unique_source_external_id",
             ),
+    
+            CheckConstraint(
+                condition=(
+                    Q(publication_date__isnull=True,  publication_date_precision__isnull=True) |
+                    Q(publication_date__isnull=False, publication_date_precision__isnull=False)
+                ),
+                name="paper_pub_date_and_precision_consistent",
+            ),
+
+            CheckConstraint(
+                condition=(
+                    Q(publication_date__isnull=True)
+                    | Q(publication_date_precision="day")
+                    | Q(publication_date_precision="month", publication_date__day=1)
+                    | Q(publication_date_precision="year",
+                        publication_date__day=1,
+                        publication_date__month=1)
+                ),
+                name="paper_pub_date_precision_implies_default_values",
+            ),
         ]
         indexes = [
-            Index(fields=["-publication_year", "-publication_month","-publication_date"]),
+            Index(fields=["-publication_date"]),      # single-column index now
         ]
 
     def __str__(self):
@@ -93,10 +115,9 @@ class Chunk(BaseModel):
                 name="unique_paper_chunk_index",
             ),
             CheckConstraint(
-            condition=Q(end_page__gte=F("start_page")),
-            name="chunk_end_page_gte_start_page",
-        ),
-
+                condition=Q(end_page__gte=F("start_page")),
+                name="chunk_end_page_gte_start_page",
+            ),
         ]
         indexes = [
             Index(fields=["paper", "start_page"]),
