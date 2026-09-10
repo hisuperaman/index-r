@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.db.models import CASCADE, CharField, ForeignKey, TextField
 
-from enums.Workspace import Role
+from enums.Workspace import MessageRole
 from server.models import PrimaryModel
 
 
@@ -25,7 +25,7 @@ class Message(PrimaryModel):
     )
     role = CharField(
         max_length=20,
-        choices=Role,
+        choices=MessageRole,
     )
     content = TextField()
 
