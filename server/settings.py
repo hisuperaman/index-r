@@ -51,6 +51,7 @@ INSTALLED_APPS = [
 	'allauth.socialaccount.providers.google',
 
 	'iam',
+    'workspaces',
 ]
 
 MIDDLEWARE = [
