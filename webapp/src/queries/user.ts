@@ -1,6 +1,6 @@
 import {useMutation} from "@tanstack/react-query";
 import {IAM} from "@/api";
-import type {UserFormData} from "@/schemas";
+import type {LoginFormData, UserFormData} from "@/schemas";
 import type {AxiosError} from "axios";
 import type {RegisterResponse} from "@/definitions/ResponseBody.ts";
 import type {Token} from "@/models";
@@ -14,6 +14,11 @@ export const useRegisterUser = () =>
 export const useVerifyEmail = () =>
     useMutation<void, AxiosError, Token>({
         mutationFn: (token: Token) => IAM.verifyEmail(token),
+    })
+
+export const useLogin = () =>
+    useMutation<Token, AxiosError, LoginFormData>({
+        mutationFn: (data: LoginFormData) => IAM.login(data),
     })
 
 export const useLogout = () => (
