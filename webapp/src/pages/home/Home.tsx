@@ -1,14 +1,16 @@
-import { Link } from "react-router-dom";
+import {PageContainer, ThemeToggle} from "@/components";
+import {Button} from "@/components/ui/button.tsx";
+import {useLogout} from "@/queries";
 
 export const Home = () => {
+    const logoutMutation = useLogout();
+
     return (
-        <div>
-            <Link
-                to="/login"
-                className="inline-block bg-blue-600 px-6 py-3 text-white"
-            >
-                LOGIN
-            </Link>
-        </div>
-    );
-};
+        <PageContainer>
+            <ThemeToggle/>
+            <Button variant={'destructive'} onClick={() => logoutMutation.mutate()}>
+                Logout
+            </Button>
+        </PageContainer>
+    )
+}

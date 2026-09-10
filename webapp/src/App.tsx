@@ -4,14 +4,14 @@ import {Path} from "@/utils";
 import {RoutePaths} from "@/enums";
 import {Home, NotFound, Signup, VerifyEmail, Login} from "@/pages";
 import {AuthLayout} from "@/layouts";
-import {GuestOnly} from "@/components";
+import {GuestOnly, Protected} from "@/components";
 
 function App() {
     return (
         <Routes>
             <Route
                 path={Path.getExactRoutePath(RoutePaths.empty)}
-                element={<Home/>}
+                element={<Protected><Home/></Protected>}
             />
 
             <Route element={<GuestOnly><AuthLayout/></GuestOnly>}>
