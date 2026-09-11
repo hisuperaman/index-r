@@ -1,26 +1,25 @@
 from django.db import migrations
 
-
 CREATE_TRIGGER_SQL = """
-CREATE OR REPLACE FUNCTION chunk_search_vector_update()
-RETURNS trigger AS $$
-BEGIN
-    NEW.search_vector :=
-        setweight(to_tsvector('english', COALESCE(NEW.heading, '')), 'A') ||
-        setweight(to_tsvector('english', COALESCE(NEW.text, '')),    'B');
-    RETURN NEW;
-END
-$$ LANGUAGE plpgsql;
+                     CREATE OR REPLACE FUNCTION chunk_search_vector_update()
+                         RETURNS trigger AS
+                     $$
+                     BEGIN
+                         NEW.search_vector :=
+                                 setweight(to_tsvector('english', COALESCE(NEW.heading, '')), 'A') ||
+                                 setweight(to_tsvector('english', COALESCE(NEW.text, '')), 'B');
+                         RETURN NEW;
+                     END
+                     $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS chunk_search_vector_trigger ON papers_chunk;
+                     DROP TRIGGER IF EXISTS chunk_search_vector_trigger ON papers_chunk;
 
-CREATE TRIGGER chunk_search_vector_trigger
-BEFORE INSERT OR UPDATE OF text, heading
-ON papers_chunk
-FOR EACH ROW
-EXECUTE FUNCTION chunk_search_vector_update();
-"""
-
+                     CREATE TRIGGER chunk_search_vector_trigger
+                         BEFORE INSERT OR UPDATE OF text, heading
+                         ON papers_chunk
+                         FOR EACH ROW
+                     EXECUTE FUNCTION chunk_search_vector_update(); \
+					 """
 
 DROP_TRIGGER_SQL = """
 DROP TRIGGER IF EXISTS chunk_search_vector_trigger ON papers_chunk;
@@ -29,14 +28,13 @@ DROP FUNCTION IF EXISTS chunk_search_vector_update();
 
 
 class Migration(migrations.Migration):
+	dependencies = [
+		('papers', '0001_initial'),
+	]
 
-    dependencies = [
-        ("papers", "0001_initial"),
-    ]
-
-    operations = [
-        migrations.RunSQL(
-            sql=CREATE_TRIGGER_SQL,
-            reverse_sql=DROP_TRIGGER_SQL,
-        ),
-    ]
+	operations = [
+		migrations.RunSQL(
+			sql=CREATE_TRIGGER_SQL,
+			reverse_sql=DROP_TRIGGER_SQL,
+		),
+	]
