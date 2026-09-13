@@ -49,6 +49,7 @@ INSTALLED_APPS = [
 	'allauth.socialaccount',
 	'allauth.socialaccount.providers.google',
 	'django.contrib.postgres',
+    "papers",
 
 	'iam',
 	'workspaces',
