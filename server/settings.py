@@ -53,7 +53,6 @@ INSTALLED_APPS = [
 
 	'iam',
 	'workspaces',
-	'papers',
 ]
 
 MIDDLEWARE = [
