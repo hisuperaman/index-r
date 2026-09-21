@@ -3,8 +3,10 @@ from django.db.models import Q
 from papers.models import Paper
 from services.fetching.base import PaperResult
 
+
 class PaperCorpusService:
-    def search(self, query: str, limit: int = 20) -> list[Paper]:
+    @staticmethod
+    def search(query: str, limit: int = 20) -> list[Paper]:
         return list(
             Paper.objects.filter(
                 Q(title__icontains=query)
@@ -12,7 +14,8 @@ class PaperCorpusService:
             )[:limit]
         )
 
-    def save(self, papers: list[PaperResult]) -> list[Paper]:
+    @staticmethod
+    def save(papers: list[PaperResult]) -> list[Paper]:
         saved_papers = []
 
         for paper in papers:
