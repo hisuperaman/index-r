@@ -13,7 +13,7 @@ type GoogleAuthBody = {
 
 export class IAM extends IndexR {
 
-    private static url: string = "/iam";
+    private static url: string = "/api/iam";
     private static authUrl: string = `${IAM.url}/auth`;
 
     public static login(data: LoginFormData): Promise<Token> {
