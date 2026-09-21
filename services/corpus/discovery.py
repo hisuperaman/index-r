@@ -1,31 +1,24 @@
-from services.corpus.service import PaperCorpusService
 from services.fetching.orchestrator import OrchestratorFetcherService
-
+from services.corpus.paper_corpus_service import PaperCorpusService
 
 class DiscoveryService:
-    def __init__(
-        self,
-        corpus: PaperCorpusService | None = None,
-        fetcher: OrchestratorFetcherService | None = None,
-    ):
-        self.corpus = corpus or PaperCorpusService()
-        self.fetcher = fetcher or OrchestratorFetcherService()
-
     def discover(
         self,
         query: str,
         limit: int = 20,
     ):
-        corpus_results = self.corpus.search(query, limit=limit)
+        corpus = PaperCorpusService()
+
+        corpus_results = corpus.search(query, limit=limit)
 
         if len(corpus_results) >= limit:
             return corpus_results
 
-        fetched_results = self.fetcher.fetch(
+        fetched_results = OrchestratorFetcherService.fetch(
             query,
             limit_per_provider=limit,
         )
 
-        new_papers = self.corpus.save(fetched_results)
+        new_papers = corpus.save(fetched_results)
 
         return corpus_results + new_papers

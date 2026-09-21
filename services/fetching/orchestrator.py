@@ -1,28 +1,25 @@
-from .arxiv import ArxivFetcherService
-from .base import BaseFetcherService, PaperResult
-from .openalex import OpenAlexFetcherService
-from .semantic_scholar import SemanticScholarFetcherService
+from services.fetching.arxiv import ArxivFetcherService
+from services.fetching.base import BaseFetcherService, PaperResult
+from services.fetching.openalex import OpenAlexFetcherService
+from services.fetching.semantic_scholar import SemanticScholarFetcherService
 
 
 class OrchestratorFetcherService:
-    def __init__(
-        self,
-        fetchers: list[BaseFetcherService] | None = None,
-    ):
-        self.fetchers = fetchers or [
-            ArxivFetcherService(),
-            OpenAlexFetcherService(),
-            SemanticScholarFetcherService(),
-        ]
+    fetchers: list[BaseFetcherService] = [
+        ArxivFetcherService(),
+        OpenAlexFetcherService(),
+        SemanticScholarFetcherService(),
+    ]
 
+    @classmethod
     def fetch(
-        self,
+        cls,
         query: str,
         limit_per_provider: int = 10,
     ) -> list[PaperResult]:
         results: list[PaperResult] = []
 
-        for fetcher in self.fetchers:
+        for fetcher in cls.fetchers:
             try:
                 papers = fetcher.fetch(
                     query,
@@ -35,7 +32,7 @@ class OrchestratorFetcherService:
                     f"{fetcher.source} fetch failed: {exc}"
                 )
 
-        return self._deduplicate(results)
+        return cls._deduplicate(results)
 
     @staticmethod
     def _deduplicate(
