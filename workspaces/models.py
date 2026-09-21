@@ -1,5 +1,5 @@
 from django.conf import settings
-from django.db.models import CASCADE, CharField, ForeignKey, TextField
+from django.db.models import CASCADE, CharField, FileField, ForeignKey, TextField
 
 from enums.Workspace import MessageRole
 from server.models import PrimaryModel
@@ -15,6 +15,19 @@ class Workspace(PrimaryModel):
 
     def __str__(self):
         return self.name
+
+
+class Paper(PrimaryModel):
+    workspace = ForeignKey(
+        Workspace,
+        on_delete=CASCADE,
+        related_name="papers",
+    )
+    title = CharField(max_length=255)
+    file = FileField(upload_to="papers/")
+
+    def __str__(self):
+        return self.title
 
 
 class Message(PrimaryModel):
