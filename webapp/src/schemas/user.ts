@@ -19,4 +19,10 @@ export const userSchema = z
         path: ["password2"],
     });
 
+export const loginSchema = z.object({
+    email: z.email("Enter a valid email"),
+    password: z.string().min(1, "Password is required"),
+});
+
 export type UserFormData = z.infer<typeof userSchema>;
+export type LoginFormData = z.infer<typeof loginSchema>;

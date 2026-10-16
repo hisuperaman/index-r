@@ -1,9 +1,9 @@
-import {useNavigate} from "react-router";
+import {Link, useNavigate} from "react-router";
 import {Controller, useForm} from "react-hook-form";
 import {zodResolver} from "@hookform/resolvers/zod";
-import {Input} from "@/components/ui/input";
-import {Button} from "@/components/ui/button";
-import {Field, FieldError, FieldGroup, FieldLabel} from "@/components/ui/field";
+import {Input} from "@/components/ui/input.tsx";
+import {Button} from "@/components/ui/button.tsx";
+import {Field, FieldError, FieldGroup, FieldLabel} from "@/components/ui/field.tsx";
 import {Path} from "@/utils";
 import {RoutePaths} from "@/enums";
 import {type UserFormData, userSchema} from "@/schemas";
@@ -13,7 +13,7 @@ import {toast} from "@/components/ui/toast.tsx";
 import type {AxiosError} from "axios";
 import {handleApiError} from "@/utils/errors.ts";
 import {useRegisterUser} from "@/queries";
-
+import {SocialAuth} from "@/pages/auth/components";
 
 export const Signup = () => {
     const navigate = useNavigate();
@@ -35,7 +35,7 @@ export const Signup = () => {
             onSuccess: () => {
                 toast.add({
                     title: "Account created",
-                    description: "You have successfully signed up.",
+                    description: "Your verification email has been sent. Please check your inbox to verify your email address.",
                     type: "success"
                 });
                 navigate(Path.getExactRoutePath(RoutePaths.empty));
@@ -53,16 +53,18 @@ export const Signup = () => {
     const isBusy = registerUser.isPending;
 
     return (
-        <Card className="bg-transparent border-0 shadow-none ring-0">
-            <CardHeader>
-                <CardTitle>Create your account</CardTitle>
-                <CardDescription>
-                    Start tracking your research in under two minutes.
-                </CardDescription>
+        <Card className="mx-auto w-full max-w-md">
+            <CardHeader className="text-center">
+                <CardTitle className="text-2xl">Create your account</CardTitle>
+                <CardDescription>Start tracking your research in under two minutes.</CardDescription>
             </CardHeader>
 
-            <form onSubmit={form.handleSubmit(handleSubmit)} className="mt-6 space-y-6">
-                <CardContent>
+            <CardContent>
+                <SocialAuth/>
+            </CardContent>
+
+            <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+                <CardContent className="pt-0">
                     <FieldGroup>
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                             <Controller
@@ -70,9 +72,7 @@ export const Signup = () => {
                                 control={form.control}
                                 render={({field, fieldState}) => (
                                     <Field data-invalid={fieldState.invalid}>
-                                        <FieldLabel htmlFor={field.name}>
-                                            First Name
-                                        </FieldLabel>
+                                        <FieldLabel htmlFor={field.name}>First Name</FieldLabel>
                                         <Input
                                             {...field}
                                             id={field.name}
@@ -81,9 +81,7 @@ export const Signup = () => {
                                             disabled={isBusy}
                                             placeholder="Your first name"
                                         />
-                                        {fieldState.invalid && (
-                                            <FieldError errors={[fieldState.error]}/>
-                                        )}
+                                        {fieldState.invalid && <FieldError errors={[fieldState.error]}/>}
                                     </Field>
                                 )}
                             />
@@ -93,9 +91,7 @@ export const Signup = () => {
                                 control={form.control}
                                 render={({field, fieldState}) => (
                                     <Field data-invalid={fieldState.invalid}>
-                                        <FieldLabel htmlFor={field.name}>
-                                            Last Name
-                                        </FieldLabel>
+                                        <FieldLabel htmlFor={field.name}>Last Name</FieldLabel>
                                         <Input
                                             {...field}
                                             id={field.name}
@@ -104,9 +100,7 @@ export const Signup = () => {
                                             disabled={isBusy}
                                             placeholder="Your last name"
                                         />
-                                        {fieldState.invalid && (
-                                            <FieldError errors={[fieldState.error]}/>
-                                        )}
+                                        {fieldState.invalid && <FieldError errors={[fieldState.error]}/>}
                                     </Field>
                                 )}
                             />
@@ -117,20 +111,16 @@ export const Signup = () => {
                                     control={form.control}
                                     render={({field, fieldState}) => (
                                         <Field data-invalid={fieldState.invalid}>
-                                            <FieldLabel htmlFor={field.name}>
-                                                Email
-                                            </FieldLabel>
+                                            <FieldLabel htmlFor={field.name}>Email Address</FieldLabel>
                                             <Input
                                                 {...field}
                                                 id={field.name}
                                                 type="email"
                                                 aria-invalid={fieldState.invalid}
                                                 disabled={isBusy}
-                                                placeholder="Your email here"
+                                                placeholder="Enter your email address"
                                             />
-                                            {fieldState.invalid && (
-                                                <FieldError errors={[fieldState.error]}/>
-                                            )}
+                                            {fieldState.invalid && <FieldError errors={[fieldState.error]}/>}
                                         </Field>
                                     )}
                                 />
@@ -142,9 +132,7 @@ export const Signup = () => {
                                     control={form.control}
                                     render={({field, fieldState}) => (
                                         <Field data-invalid={fieldState.invalid}>
-                                            <FieldLabel htmlFor={field.name}>
-                                                Password
-                                            </FieldLabel>
+                                            <FieldLabel htmlFor={field.name}>Password</FieldLabel>
                                             <Input
                                                 {...field}
                                                 id={field.name}
@@ -153,9 +141,7 @@ export const Signup = () => {
                                                 disabled={isBusy}
                                                 placeholder="Enter your password"
                                             />
-                                            {fieldState.invalid && (
-                                                <FieldError errors={[fieldState.error]}/>
-                                            )}
+                                            {fieldState.invalid && <FieldError errors={[fieldState.error]}/>}
                                         </Field>
                                     )}
                                 />
@@ -167,9 +153,7 @@ export const Signup = () => {
                                     control={form.control}
                                     render={({field, fieldState}) => (
                                         <Field data-invalid={fieldState.invalid}>
-                                            <FieldLabel htmlFor={field.name}>
-                                                Confirm Password
-                                            </FieldLabel>
+                                            <FieldLabel htmlFor={field.name}>Confirm Password</FieldLabel>
                                             <Input
                                                 {...field}
                                                 id={field.name}
@@ -178,9 +162,7 @@ export const Signup = () => {
                                                 disabled={isBusy}
                                                 placeholder="Confirm your password"
                                             />
-                                            {fieldState.invalid && (
-                                                <FieldError errors={[fieldState.error]}/>
-                                            )}
+                                            {fieldState.invalid && <FieldError errors={[fieldState.error]}/>}
                                         </Field>
                                     )}
                                 />
@@ -189,15 +171,21 @@ export const Signup = () => {
                     </FieldGroup>
                 </CardContent>
 
-                <CardFooter className="justify-end p-6">
-                    <Button
-                        type="submit"
-                        disabled={isBusy}
-                        className="w-full"
-                    >
-                        {isBusy && <Spinner/>}
+                <CardFooter className="flex flex-col gap-4 p-6 pt-0">
+                    <Button type="submit" disabled={isBusy} className="w-full">
+                        {isBusy && <Spinner className="mr-2 h-4 w-4"/>}
                         Create account
                     </Button>
+
+                    <div className="text-center text-sm text-muted-foreground">
+                        Already have an account?{" "}
+                        <Link
+                            to={Path.getExactRoutePath(RoutePaths.login)}
+                            className="underline underline-offset-4 hover:text-primary"
+                        >
+                            Login
+                        </Link>
+                    </div>
                 </CardFooter>
             </form>
         </Card>

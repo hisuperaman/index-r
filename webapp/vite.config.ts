@@ -5,19 +5,19 @@ import {fileURLToPath} from "node:url";
 
 // https://vite.dev/config/
 export default defineConfig({
-	plugins: [react(), tailwindcss()],
-	resolve: {
-		alias: {
-			"@": fileURLToPath(new URL("./src", import.meta.url)),
-		},
-	},
-	server: {
-		proxy: ['admin', 'iam', 'server', 'media', 'static'].reduce((acc, path) =>
-			({
-				...acc, [`/${path}`]: {
-					target: 'http://localhost:8000',
-					ws: true,
-				}
-			}), {})
-	},
+    plugins: [react(), tailwindcss()],
+    resolve: {
+        alias: {
+            "@": fileURLToPath(new URL("./src", import.meta.url)),
+        },
+    },
+    server: {
+        proxy: ['admin', 'api', 'server', 'media', 'static'].reduce((acc, path) =>
+            ({
+                ...acc, [`/${path}`]: {
+                    target: 'http://localhost:8000',
+                    ws: true,
+                }
+            }), {})
+    },
 })

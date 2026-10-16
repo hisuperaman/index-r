@@ -48,9 +48,12 @@ INSTALLED_APPS = [
 	'allauth.account',
 	'allauth.socialaccount',
 	'allauth.socialaccount.providers.google',
+	'django.contrib.postgres',
 
 	'iam',
-    'chat',
+	'workspaces',
+	'papers',
+	'chat',
 ]
 
 MIDDLEWARE = [

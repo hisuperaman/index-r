@@ -62,7 +62,7 @@ export const VerifyEmail = () => {
     return (
         <div className="flex min-h-[50vh] w-full items-center justify-center p-4">
             <Card className="w-full max-w-sm shadow-sm">
-                {!loading ? (
+                {loading ? (
                     <CardContent className="flex flex-col items-center justify-center gap-4 py-12">
                         <Spinner/>
                         <p className="text-sm text-muted-foreground">
