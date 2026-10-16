@@ -3,7 +3,7 @@ import {IAM} from "@/api";
 import type {LoginFormData, UserFormData} from "@/schemas";
 import type {AxiosError} from "axios";
 import type {RegisterResponse} from "@/definitions/ResponseBody.ts";
-import type {Token} from "@/models";
+import type {LoginResponse, Token} from "@/models";
 import {onLogout} from "@/account";
 
 export const useRegisterUser = () =>
@@ -17,7 +17,7 @@ export const useVerifyEmail = () =>
     })
 
 export const useLogin = () =>
-    useMutation<Token, AxiosError, LoginFormData>({
+    useMutation<LoginResponse, AxiosError, LoginFormData>({
         mutationFn: (data: LoginFormData) => IAM.login(data),
     })
 

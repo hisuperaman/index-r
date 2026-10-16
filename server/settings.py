@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 import logging
+from datetime import timedelta
 from os.path import join
 from pathlib import Path
 from sys import modules
@@ -41,7 +42,7 @@ INSTALLED_APPS = [
 	'django.contrib.sites',
 	'django.contrib.staticfiles',
 	'rest_framework',
-	'rest_framework.authtoken',
+	'rest_framework_simplejwt.token_blacklist',
 	'dj_rest_auth',
 	'dj_rest_auth.registration',
 	'allauth',
@@ -145,7 +146,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 REST_FRAMEWORK = {
 	'DEFAULT_AUTHENTICATION_CLASSES': [
-		'rest_framework.authentication.TokenAuthentication',
+		'rest_framework_simplejwt.authentication.JWTAuthentication',
 		'rest_framework.authentication.SessionAuthentication',
 		'rest_framework.authentication.BasicAuthentication',
 	],
@@ -160,7 +161,20 @@ logging.basicConfig(
 )
 
 REST_AUTH = {
-	"REGISTER_SERIALIZER": "iam.serializers.CustomRegisterSerializer"
+	"REGISTER_SERIALIZER": "iam.serializers.CustomRegisterSerializer",
+	"USE_JWT": True,
+	"JWT_AUTH_HTTPONLY": False,
+	"TOKEN_MODEL": None,
+	"SESSION_LOGIN": False,
+}
+
+SIMPLE_JWT = {
+	"ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
+	"REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+	"ROTATE_REFRESH_TOKENS": True,
+	"BLACKLIST_AFTER_ROTATION": True,
+	"UPDATE_LAST_LOGIN": True,
+	"AUTH_HEADER_TYPES": ("Bearer",),
 }
 
 AUTH_USER_MODEL = "iam.User"
