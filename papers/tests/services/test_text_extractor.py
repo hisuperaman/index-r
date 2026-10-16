@@ -1,312 +1,180 @@
-"""
-Unit tests for TextExtractorService.
-
-- No file I/O — pymupdf4llm is fully mocked.
-- Path validation is exercised via mock.patch on Path methods.
-- Patch is used as a context manager (never as a decorator).
-"""
-
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
+import pymupdf
 from django.test import SimpleTestCase
 
-from papers.services.TextExtractorService import (
-    ExtractedDocument,
-    ExtractedSection,
-    TextExtractorService,
-)
+from papers.definitions import ExtractedAuthor
+from papers.services import TextExtractorService
 
 
-# --------------------------------------------------------------------------- #
-# Fixtures — in-memory fake data only
-# --------------------------------------------------------------------------- #
+def page(number, text, **metadata):
+	return {"metadata": {"page_number": number, **metadata}, "text": text}
 
-DICT_CHUNKS = [
-    {
-        "metadata": {"page_number": 0},
-        "text": "# Title\n\nAuthor line.\n\n## 1 Intro\n\nIntro body.\n",
-    },
-    {
-        "metadata": {"page_number": 1},
-        "text": "## 2 Methods\n\n### 2.1 Sub\n\nMethods body.\n",
-    },
-    {
-        "metadata": {"page_number": 2},
-        "text": "## 3 Conclusion\n\nDone.\n\n## References\n\n[1] Someone.\n",
-    },
-]
 
-STRING_CHUNKS = [
-    "# Title\n\n## 1 Intro\n\nBody one.\n",
-    "## 2 Methods\n\nBody two.\n",
-]
-
-EMPTY_SECTION_CHUNKS = [
-    {
-        "metadata": {"page_number": 0},
-        "text": "# Title\n\n## 2 Methods\n\n### 2.1 Sub\n\nContent.\n",
-    },
+PAPER_PAGES = [
+	page(
+		1,
+		"# **A Study of Things**\n\n"
+		"Ada Lovelace<sup>1</sup> , Alan Turing<sup>2</sup> , and Grace Hopper<sup>1</sup>\n\n"
+		"Abstract. We study things.\n\n"
+		"https://doi.org/10.1234/abc.567.\n\n"
+		"## **1 Introduction**\n\n"
+		"Intro body.\n\n",
+		title="Untitled-5",
+		author="0002624",
+	),
+	page(
+		2,
+		"Intro continues.\n\n"
+		"## 2 Methods\n\n"
+		"### 2.1 Sub\n\n"
+		"Methods body.\n\n"
+		"## 3 References\n\n"
+		"[1] Someone. 10.9999/not.this.one\n",
+	),
 ]
 
 
-# --------------------------------------------------------------------------- #
-# Helper
-# --------------------------------------------------------------------------- #
+class TextExtractorServiceTests(SimpleTestCase):
+	def extract(self, pages, max_chunk_chars=TextExtractorService.MAX_CHUNK_CHARS):
+		with (
+			patch.object(TextExtractorService, "validate_path", return_value=Path("paper.pdf")),
+			patch("papers.services.TextExtractorService.pymupdf4llm.to_markdown", return_value=pages),
+		):
+			return TextExtractorService.extract("paper.pdf", max_chunk_chars=max_chunk_chars)
 
-def _mock_valid_path():
-    """Context manager: pretend any given path is a real PDF file."""
-    return patch.multiple(
-        Path,
-        exists=MagicMock(return_value=True),
-        is_file=MagicMock(return_value=True),
-    )
+	def test_missing_file_raises_file_not_found(self):
+		with TemporaryDirectory() as directory, self.assertRaises(FileNotFoundError):
+			TextExtractorService.extract(Path(directory) / "missing.pdf")
 
+	def test_directory_raises_value_error(self):
+		with TemporaryDirectory() as directory, self.assertRaises(ValueError):
+			TextExtractorService.extract(directory)
 
-# --------------------------------------------------------------------------- #
-# Tests
-# --------------------------------------------------------------------------- #
+	def test_non_pdf_raises_value_error(self):
+		with TemporaryDirectory() as directory, self.assertRaises(ValueError):
+			path = Path(directory) / "notes.txt"
+			path.write_text("not a pdf")
+			TextExtractorService.extract(path)
 
-class TestTextExtractorService(SimpleTestCase):
+	def test_reads_title_from_first_top_level_heading(self):
+		self.assertEqual(self.extract(PAPER_PAGES).title, "A Study of Things")
 
-    # ------------------------------------------------------------------ #
-    # _validate_path
-    # ------------------------------------------------------------------ #
+	def test_falls_back_to_title_metadata_without_top_level_heading(self):
+		paper = self.extract([page(1, "## Intro\n\nBody.\n", title="Metadata Title")])
 
-    def test_validate_path_raises_file_not_found_when_missing(self):
-        with patch.object(Path, "exists", return_value=False):
-            with self.assertRaises(FileNotFoundError):
-                TextExtractorService._validate_path("whatever.pdf")
+		self.assertEqual(paper.title, "Metadata Title")
 
-    def test_validate_path_raises_value_error_when_not_a_file(self):
-        with patch.object(Path, "exists", return_value=True), \
-             patch.object(Path, "is_file", return_value=False):
-            with self.assertRaises(ValueError):
-                TextExtractorService._validate_path("whatever.pdf")
+	def test_reads_authors_in_byline_order(self):
+		self.assertEqual(self.extract(PAPER_PAGES).authors, [
+			ExtractedAuthor(name="Ada Lovelace"),
+			ExtractedAuthor(name="Alan Turing"),
+			ExtractedAuthor(name="Grace Hopper"),
+		])
 
-    def test_validate_path_raises_value_error_when_not_pdf_extension(self):
-        with patch.object(Path, "exists", return_value=True), \
-             patch.object(Path, "is_file", return_value=True):
-            with self.assertRaises(ValueError):
-                TextExtractorService._validate_path("notes.txt")
+	def test_falls_back_to_author_metadata_when_byline_is_not_names(self):
+		paper = self.extract([page(1, "# Title\n\nUniversity of Somewhere, 12345\n", author="Ada Lovelace; Alan Turing")])
 
-    def test_validate_path_returns_resolved_path_for_valid_pdf(self):
-        with _mock_valid_path():
-            result = TextExtractorService._validate_path("paper.pdf")
-        self.assertIsInstance(result, Path)
-        self.assertEqual(result.suffix.lower(), ".pdf")
+		self.assertEqual([author.name for author in paper.authors], ["Ada Lovelace", "Alan Turing"])
 
-    # ------------------------------------------------------------------ #
-    # _normalize_page_chunk
-    # ------------------------------------------------------------------ #
+	def test_ignores_author_metadata_that_is_not_names(self):
+		paper = self.extract([page(1, "Body.\n", author="0002624")])
 
-    def test_normalize_page_chunk_reads_dict_format(self):
-        chunk = {"metadata": {"page_number": 5}, "text": "hello"}
-        page_num, text = TextExtractorService._normalize_page_chunk(0, chunk)
-        self.assertEqual(page_num, 5)
-        self.assertEqual(text, "hello")
+		self.assertEqual(paper.authors, [])
 
-    def test_normalize_page_chunk_falls_back_to_index_for_dict(self):
-        chunk = {"metadata": {}, "text": "hello"}
-        page_num, _ = TextExtractorService._normalize_page_chunk(7, chunk)
-        self.assertEqual(page_num, 7)
+	def test_reads_abstract_paragraph(self):
+		self.assertEqual(self.extract(PAPER_PAGES).abstract, "We study things.")
 
-    def test_normalize_page_chunk_reads_string_format(self):
-        page_num, text = TextExtractorService._normalize_page_chunk(3, "raw page text")
-        self.assertEqual(page_num, 3)
-        self.assertEqual(text, "raw page text")
+	def test_reads_abstract_section(self):
+		paper = self.extract([page(1, "## Abstract\n\nWe study things.\n\n## 1 Intro\n\nBody.\n")])
 
-    def test_normalize_page_chunk_handles_missing_text_key(self):
-        chunk = {"metadata": {"page_number": 1}}
-        _, text = TextExtractorService._normalize_page_chunk(0, chunk)
-        self.assertEqual(text, "")
+		self.assertEqual(paper.abstract, "We study things.")
 
-    # ------------------------------------------------------------------ #
-    # _merge_with_page_markers
-    # ------------------------------------------------------------------ #
+	def test_abstract_is_none_when_absent(self):
+		self.assertIsNone(self.extract([page(1, "## Intro\n\nBody.\n")]).abstract)
 
-    def test_merge_with_page_markers_inserts_marker_between_pages(self):
-        merged = TextExtractorService._merge_with_page_markers(DICT_CHUNKS)
-        self.assertIn("<<<PAGE:0>>>", merged)
-        self.assertIn("<<<PAGE:1>>>", merged)
-        self.assertIn("<<<PAGE:2>>>", merged)
+	def test_reads_doi_from_first_page_only(self):
+		self.assertEqual(self.extract(PAPER_PAGES).doi, "10.1234/abc.567")
 
-    def test_merge_with_page_markers_places_marker_before_each_page(self):
-        merged = TextExtractorService._merge_with_page_markers(DICT_CHUNKS)
-        title_pos = merged.index("# Title")
-        marker_pos = merged.index("<<<PAGE:0>>>")
-        self.assertLess(marker_pos, title_pos)
+	def test_starts_a_chunk_at_every_heading(self):
+		chunks = self.extract(PAPER_PAGES).chunks
 
-    def test_merge_with_page_markers_handles_string_chunks(self):
-        merged = TextExtractorService._merge_with_page_markers(STRING_CHUNKS)
-        self.assertIn("<<<PAGE:0>>>", merged)
-        self.assertIn("<<<PAGE:1>>>", merged)
+		self.assertEqual(
+			[(chunk.heading, chunk.text) for chunk in chunks],
+			[
+				("A Study of Things", "Ada Lovelace<sup>1</sup> , Alan Turing<sup>2</sup> , and Grace Hopper<sup>1</sup>"
+									  "\n\nAbstract. We study things.\n\nhttps://doi.org/10.1234/abc.567."),
+				("1 Introduction", "Intro body.\n\nIntro continues."),
+				("2.1 Sub", "Methods body."),
+			],
+		)
 
-    # ------------------------------------------------------------------ #
-    # _page_of
-    # ------------------------------------------------------------------ #
+	def test_numbers_chunks_in_order(self):
+		self.assertEqual([chunk.chunk_index for chunk in self.extract(PAPER_PAGES).chunks], [0, 1, 2])
 
-    def test_page_of_returns_last_marker_before_position(self):
-        merged = "<<<PAGE:1>>>\nfoo\n<<<PAGE:2>>>\nbar"
-        pos = merged.index("bar")
-        self.assertEqual(TextExtractorService._page_of(merged, pos), 2)
+	def test_chunk_spans_the_pages_its_text_is_on(self):
+		introduction = self.extract(PAPER_PAGES).chunks[1]
 
-    def test_page_of_returns_zero_when_no_markers_before_position(self):
-        merged = "no markers here"
-        self.assertEqual(TextExtractorService._page_of(merged, 5), 0)
+		self.assertEqual((introduction.start_page, introduction.end_page), (1, 2))
 
-    def test_page_of_returns_first_marker_when_position_after_it(self):
-        merged = "<<<PAGE:9>>>\nbody"
-        pos = merged.index("body")
-        self.assertEqual(TextExtractorService._page_of(merged, pos), 9)
+	def test_drops_back_matter_sections(self):
+		headings = [chunk.heading for chunk in self.extract(PAPER_PAGES).chunks]
 
-    # ------------------------------------------------------------------ #
-    # _last_page_in
-    # ------------------------------------------------------------------ #
+		self.assertNotIn("3 References", headings)
 
-    def test_last_page_in_returns_max_marker(self):
-        body = "text\n<<<PAGE:2>>>\nmore\n<<<PAGE:5>>>\ntail"
-        self.assertEqual(TextExtractorService._last_page_in(body, default=0), 5)
+	def test_keeps_text_before_first_heading_without_a_heading(self):
+		chunks = self.extract([page(1, "Preamble.\n\n## Intro\n\nBody.\n")]).chunks
 
-    def test_last_page_in_returns_default_when_no_markers(self):
-        self.assertEqual(TextExtractorService._last_page_in("no markers", default=42), 42)
+		self.assertEqual([(chunk.heading, chunk.text) for chunk in chunks], [(None, "Preamble."), ("Intro", "Body.")])
 
-    # ------------------------------------------------------------------ #
-    # _fix_page_indexing
-    # ------------------------------------------------------------------ #
+	def test_splits_a_long_section_at_paragraphs_under_the_same_heading(self):
+		paragraphs = ["a" * 40, "b" * 40, "c" * 40]
+		chunks = self.extract([page(1, "## Long\n\n" + "\n\n".join(paragraphs) + "\n")], max_chunk_chars=90).chunks
 
-    def test_fix_page_indexing_shifts_zero_based_to_one_based(self):
-        sections = [
-            ExtractedSection("A", 1, 0, 0, "x"),
-            ExtractedSection("B", 1, 1, 1, "y"),
-        ]
-        result = TextExtractorService._fix_page_indexing(sections)
-        self.assertEqual(result[0].start_page, 1)
-        self.assertEqual(result[1].start_page, 2)
+		self.assertEqual([chunk.text for chunk in chunks], ["a" * 40 + "\n\n" + "b" * 40, "c" * 40])
+		self.assertEqual({chunk.heading for chunk in chunks}, {"Long"})
 
-    def test_fix_page_indexing_leaves_one_based_untouched(self):
-        sections = [
-            ExtractedSection("A", 1, 1, 1, "x"),
-            ExtractedSection("B", 1, 2, 2, "y"),
-        ]
-        result = TextExtractorService._fix_page_indexing(sections)
-        self.assertEqual(result[0].start_page, 1)
-        self.assertEqual(result[1].start_page, 2)
+	def test_splits_a_long_paragraph_at_sentences(self):
+		paragraph = "First sentence here. Second sentence here. Third sentence here."
+		chunks = self.extract([page(1, f"## Long\n\n{paragraph}\n")], max_chunk_chars=45).chunks
 
-    def test_fix_page_indexing_handles_empty_list(self):
-        self.assertEqual(TextExtractorService._fix_page_indexing([]), [])
+		self.assertEqual(
+			[chunk.text for chunk in chunks],
+			["First sentence here. Second sentence here.", "Third sentence here."],
+		)
 
-    # ------------------------------------------------------------------ #
-    # _split_into_sections
-    # ------------------------------------------------------------------ #
+	def test_never_exceeds_the_chunk_limit(self):
+		text = "## Long\n\n" + "word " * 500 + "\n\n" + "x" * 2500 + "\n"
+		chunks = self.extract([page(1, text)], max_chunk_chars=100).chunks
 
-    def test_split_into_sections_returns_one_per_heading(self):
-        merged = (
-            "<<<PAGE:0>>>\n"
-            "# Title\nbody\n"
-            "## 1 Intro\nintro body\n"
-            "### 1.1 Sub\nsub body\n"
-        )
-        sections = TextExtractorService._split_into_sections(merged)
-        headings = [s.heading for s in sections]
-        self.assertEqual(headings, ["Title", "1 Intro", "1.1 Sub"])
+		self.assertTrue(all(len(chunk.text) <= 100 for chunk in chunks))
+		self.assertEqual("".join(chunk.text for chunk in chunks).count("x"), 2500)
 
-    def test_split_into_sections_assigns_correct_levels(self):
-        merged = "# A\na\n## B\nb\n### C\nc\n"
-        sections = TextExtractorService._split_into_sections(merged)
-        self.assertEqual([s.level for s in sections], [1, 2, 3])
+	def test_extracts_a_real_pdf(self):
+		with TemporaryDirectory() as directory:
+			path = Path(directory) / "paper.pdf"
+			document = pymupdf.open()
+			first = document.new_page()
+			first.insert_text((72, 80), "A Study of Things", fontsize=20, fontname="hebo")
+			first.insert_text((72, 120), "Ada Lovelace, Alan Turing", fontsize=10)
+			first.insert_text((72, 160), "1 Introduction", fontsize=14, fontname="hebo")
+			first.insert_text((72, 190), "Intro body.", fontsize=10)
+			second = document.new_page()
+			second.insert_text((72, 80), "2 Methods", fontsize=14, fontname="hebo")
+			second.insert_text((72, 110), "Methods body.", fontsize=10)
+			document.save(path)
 
-    def test_split_into_sections_strips_page_markers_from_body(self):
-        merged = "<<<PAGE:0>>>\n# Title\nbody <<<PAGE:1>>> more body\n"
-        sections = TextExtractorService._split_into_sections(merged)
-        self.assertNotIn("<<<PAGE:", sections[0].text)
+			paper = TextExtractorService.extract(path)
 
-    def test_split_into_sections_returns_empty_list_when_no_headings(self):
-        sections = TextExtractorService._split_into_sections("plain text, no headings")
-        self.assertEqual(sections, [])
-
-    # ------------------------------------------------------------------ #
-    # extract — orchestration
-    # ------------------------------------------------------------------ #
-
-    def test_extract_returns_extracted_document(self):
-        with _mock_valid_path(), \
-             patch.object(TextExtractorService, "_to_markdown_chunks", return_value=DICT_CHUNKS):
-            result = TextExtractorService.extract("paper.pdf")
-        self.assertIsInstance(result, ExtractedDocument)
-
-    def test_extract_sets_total_pages_from_chunk_count(self):
-        with _mock_valid_path(), \
-             patch.object(TextExtractorService, "_to_markdown_chunks", return_value=DICT_CHUNKS):
-            result = TextExtractorService.extract("paper.pdf")
-        self.assertEqual(result.total_pages, 3)
-
-    def test_extract_filters_empty_sections(self):
-        with _mock_valid_path(), \
-             patch.object(TextExtractorService, "_to_markdown_chunks", return_value=EMPTY_SECTION_CHUNKS):
-            result = TextExtractorService.extract("paper.pdf")
-        headings = [s.heading for s in result.sections]
-        self.assertNotIn("2 Methods", headings)   # empty body
-        self.assertIn("2.1 Sub", headings)
-
-    def test_extract_filters_references_section(self):
-        with _mock_valid_path(), \
-             patch.object(TextExtractorService, "_to_markdown_chunks", return_value=DICT_CHUNKS):
-            result = TextExtractorService.extract("paper.pdf")
-        headings = [s.heading.lower() for s in result.sections]
-        self.assertNotIn("references", headings)
-
-    def test_extract_filters_bibliography_case_insensitive(self):
-        chunks = [{"metadata": {"page_number": 0}, "text": "# T\n\n## Bibliography\n\nx\n"}]
-        with _mock_valid_path(), \
-             patch.object(TextExtractorService, "_to_markdown_chunks", return_value=chunks):
-            result = TextExtractorService.extract("paper.pdf")
-        headings = [s.heading.lower() for s in result.sections]
-        self.assertNotIn("bibliography", headings)
-
-    def test_extract_shifts_zero_based_pages_to_one_based(self):
-        with _mock_valid_path(), \
-             patch.object(TextExtractorService, "_to_markdown_chunks", return_value=DICT_CHUNKS):
-            result = TextExtractorService.extract("paper.pdf")
-        self.assertGreaterEqual(min(s.start_page for s in result.sections), 1)
-
-    def test_extract_handles_string_chunks(self):
-        with _mock_valid_path(), \
-             patch.object(TextExtractorService, "_to_markdown_chunks", return_value=STRING_CHUNKS):
-            result = TextExtractorService.extract("paper.pdf")
-        headings = [s.heading for s in result.sections]
-        self.assertIn("Title", headings)
-        self.assertIn("1 Intro", headings)
-
-    def test_extract_calls_to_markdown_with_page_chunks_true(self):
-        with _mock_valid_path(), \
-             patch.object(TextExtractorService, "_to_markdown_chunks", return_value=DICT_CHUNKS) as mock_chunks:
-            TextExtractorService.extract("paper.pdf")
-        mock_chunks.assert_called_once()
-
-    def test_extract_does_not_query_database(self):
-        with _mock_valid_path(), \
-             patch.object(TextExtractorService, "_to_markdown_chunks", return_value=DICT_CHUNKS), \
-             self.assertNumQueries(0):
-            TextExtractorService.extract("paper.pdf")
-
-    def test_extract_propagates_file_not_found(self):
-        with patch.object(Path, "exists", return_value=False):
-            with self.assertRaises(FileNotFoundError):
-                TextExtractorService.extract("missing.pdf")
-
-    # ------------------------------------------------------------------ #
-    # Dataclass contracts
-    # ------------------------------------------------------------------ #
-
-    def test_extracted_section_char_count_reflects_text_length(self):
-        s = ExtractedSection("H", 1, 1, 1, "hello")
-        self.assertEqual(s.char_count, 5)
-
-    def test_extracted_section_is_empty_true_for_whitespace_only(self):
-        s = ExtractedSection("H", 1, 1, 1, "   \n\t ")
-        self.assertTrue(s.is_empty)
-
-    def test_extracted_section_is_empty_false_for_real_text(self):
-        s = ExtractedSection("H", 1, 1, 1, "content")
-        self.assertFalse(s.is_empty)
+		self.assertEqual(paper.title, "A Study of Things")
+		self.assertEqual([author.name for author in paper.authors], ["Ada Lovelace", "Alan Turing"])
+		self.assertEqual(
+			[(chunk.heading, chunk.text, chunk.start_page) for chunk in paper.chunks],
+			[
+				("A Study of Things", "Ada Lovelace, Alan Turing", 1),
+				("1 Introduction", "Intro body.", 1),
+				("2 Methods", "Methods body.", 2),
+			],
+		)

@@ -12,6 +12,7 @@ psycopg = {extras = ["binary"], version = "3.3.4"}
 requests = "2.34.2"
 pyjwt = "2.13.0"
 cryptography = "50.0.1"
+pymupdf4llm = "==1.28.2"
 
 [dev-packages]
 
