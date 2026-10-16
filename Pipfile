@@ -11,6 +11,8 @@ djangorestframework = "3.18.0"
 psycopg = {extras = ["binary"], version = "3.3.4"}
 requests = "2.34.2"
 tzdata = "*"
+pyjwt = "2.13.0"
+cryptography = "50.0.1"
 
 [dev-packages]
 

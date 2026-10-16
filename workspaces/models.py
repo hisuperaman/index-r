@@ -6,15 +6,15 @@ from server.models import PrimaryModel
 
 
 class Workspace(PrimaryModel):
-    user = ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=CASCADE,
-        related_name="workspaces",
-    )
-    name = CharField(max_length=255)
+	user = ForeignKey(
+		settings.AUTH_USER_MODEL,
+		on_delete=CASCADE,
+		related_name="workspaces",
+	)
+	name = CharField(max_length=255)
 
-    def __str__(self):
-        return self.name
+	def __str__(self):
+		return self.name
 
 
 class Paper(PrimaryModel):
@@ -31,16 +31,16 @@ class Paper(PrimaryModel):
 
 
 class Message(PrimaryModel):
-    workspace = ForeignKey(
-        Workspace,
-        on_delete=CASCADE,
-        related_name="messages",
-    )
-    role = CharField(
-        max_length=20,
-        choices=MessageRole,
-    )
-    content = TextField()
+	workspace = ForeignKey(
+		Workspace,
+		on_delete=CASCADE,
+		related_name="messages",
+	)
+	role = CharField(
+		max_length=20,
+		choices=MessageRole,
+	)
+	content = TextField()
 
-    def __str__(self):
-        return f"{self.role} message in {self.workspace.name}"
+	def __str__(self):
+		return f"{self.role} message in {self.workspace.name}"

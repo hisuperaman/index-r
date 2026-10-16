@@ -64,7 +64,13 @@ cd webapp
 yarn install
 ```
 
-3. Start the frontend server:
+3. Create a .env file in the /webapp directory with the following template:
+
+```bash
+VITE_APP_GOOGLE_CLIENT_ID=
+```
+
+4. Start the frontend server:
 
 ```bash
 yarn run dev

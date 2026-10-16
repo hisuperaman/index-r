@@ -1,25 +1,22 @@
 import IndexR from "@/api/IndexR.ts";
 import type {Token, User} from "@/models";
 import {onLogout} from "@/account";
-import type {UserFormData} from "@/schemas";
+import type {LoginFormData, UserFormData} from "@/schemas";
 import type {RegisterResponse} from "@/definitions/ResponseBody.ts";
 
-type AuthBody = {
+type GoogleAuthBody = {
     access_token: string,
     id_token: string
 } | {
     code: string,
-} | {
-    email: string,
-    password: string
 }
 
 export class IAM extends IndexR {
 
-    private static url: string = "/iam";
+    private static url: string = "/api/iam";
     private static authUrl: string = `${IAM.url}/auth`;
 
-    public static login(data: AuthBody): Promise<Token> {
+    public static login(data: LoginFormData): Promise<Token> {
         return this.post(`${IAM.authUrl}/login/`, data);
     }
 
@@ -35,7 +32,7 @@ export class IAM extends IndexR {
         return this.post(`${IAM.authUrl}/logout/`).finally(onLogout);
     }
 
-    public static googleAuth(data: AuthBody): Promise<Token> {
+    public static googleAuth(data: GoogleAuthBody): Promise<Token> {
         return IAM.post(`${IAM.url}/auth/google/`, data);
     }
 

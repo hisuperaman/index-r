@@ -1,4 +1,4 @@
 export * from './home';
-export * from './signup';
+export * from './auth';
 export * from './verify-email';
 export * from './NotFound.tsx';
