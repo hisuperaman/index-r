@@ -29,7 +29,7 @@ class AnswerServiceTests(TestCase):
 
 	def answer(self, content: str, insufficient: bool = False):
 		draft = GroundedAnswer(content=content, is_insufficient_context=insufficient)
-		with patch.object(LLMService, "run", return_value=draft) as run:
+		with patch.object(LLMService, "stream", return_value=iter([draft])) as run:
 			answer = AnswerService.answer(QUESTION, [self.attention, self.dropout])
 		self.run = run
 		return answer
@@ -67,8 +67,23 @@ class AnswerServiceTests(TestCase):
 		self.assertIn("[2] Attention Is All You Need, §5.4 Regularization, p.7\nResidual dropout.", prompt)
 		self.assertEqual((output_type, instructions), (GroundedAnswer, ANSWER_INSTRUCTIONS))
 
+	def test_streams_the_answer_as_it_grows(self):
+		drafts = [GroundedAnswer(content="Heads"), GroundedAnswer(content="Heads attend [1] [9]")]
+
+		with patch.object(LLMService, "stream", return_value=iter(drafts)):
+			answers = list(AnswerService.stream(QUESTION, [self.attention, self.dropout]))
+
+		self.assertEqual([answer.content for answer in answers], ["Heads", "Heads attend [1]"])
+		self.assertEqual(answers[-1].citations, {1: self.attention})
+
+	def test_a_blank_answer_ends_with_a_fallback(self):
+		answer = self.answer("   ")
+
+		self.assertEqual(answer.content, AnswerService.NO_ANSWER)
+		self.assertTrue(answer.is_insufficient_context)
+
 	def test_no_passages_is_insufficient_without_calling_the_llm(self):
-		with patch.object(LLMService, "run") as run:
+		with patch.object(LLMService, "stream") as run:
 			answer = AnswerService.answer(QUESTION, [])
 
 		run.assert_not_called()

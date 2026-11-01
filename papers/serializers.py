@@ -18,6 +18,7 @@ class PaperSerializer(ModelSerializer):
 
 class ChunkSerializer(ModelSerializer):
 	paper = PaperSerializer(read_only=True)
+	citation = CharField(read_only=True)
 	rank = FloatField(read_only=True)
 	score = FloatField(read_only=True)
 	q = CharField(write_only=True, max_length=500)
@@ -30,7 +31,7 @@ class ChunkSerializer(ModelSerializer):
 		model = Chunk
 		read_only_fields = [
 			Chunk.fields.id, Chunk.fields.paper, Chunk.fields.heading, Chunk.fields.text, Chunk.fields.start_page,
-			Chunk.fields.end_page, Chunk.fields.chunk_index, 'rank', 'score',
+			Chunk.fields.end_page, Chunk.fields.chunk_index, 'citation', 'rank', 'score',
 		]
 		fields = [*read_only_fields, 'q', 'year_from', 'year_to', 'venue', 'min_citations']
 

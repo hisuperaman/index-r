@@ -1,4 +1,6 @@
 import re
+from collections import deque
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 from papers.models import Chunk
@@ -20,16 +22,31 @@ class AnswerService:
 
 	MARKER_RE = re.compile(r"\s?\[(\d+)]")
 	NO_PASSAGES = "No passages in the corpus answer this question yet."
+	NO_ANSWER = "I could not write an answer from the passages found."
 
 	@classmethod
 	def answer(cls, question: str, chunks: list[Chunk]) -> Answer:
 		"""Answers `question` from `chunks`, keeping only the [n] markers that name a passage it was given."""
+		return deque(cls.stream(question, chunks), maxlen=1)[0]
+
+	@classmethod
+	def stream(cls, question: str, chunks: list[Chunk]) -> Iterator[Answer]:
+		"""Yields the answer as the LLM writes it, ending with the complete one."""
 		if not chunks:
-			return Answer(content=cls.NO_PASSAGES, citations={}, is_insufficient_context=True)
+			yield Answer(content=cls.NO_PASSAGES, citations={}, is_insufficient_context=True)
+			return
 
 		prompt = build_answer_prompt(question, [f"{chunk.citation}\n{chunk.text}" for chunk in chunks])
-		draft = LLMService.run(prompt, GroundedAnswer, ANSWER_INSTRUCTIONS)
+		draft = None
+		for draft in LLMService.stream(prompt, GroundedAnswer, ANSWER_INSTRUCTIONS):
+			yield cls.to_answer(draft, chunks)
 
+		if draft is None or not draft.content.strip():
+			yield Answer(content=cls.NO_ANSWER, citations={}, is_insufficient_context=True)
+
+	@classmethod
+	def to_answer(cls, draft: GroundedAnswer, chunks: list[Chunk]) -> Answer:
+		"""Keeps the draft's markers that name a passage and maps each to its chunk."""
 		passages = dict(enumerate(chunks, start=1))
 		content = cls.MARKER_RE.sub(lambda marker: marker[0] if int(marker[1]) in passages else "", draft.content)
 		citations = {int(number): passages[int(number)] for number in cls.MARKER_RE.findall(content)}

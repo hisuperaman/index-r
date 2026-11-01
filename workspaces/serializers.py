@@ -3,8 +3,8 @@ from rest_framework.relations import PrimaryKeyRelatedField
 from rest_framework.serializers import ModelSerializer
 
 from papers.models import Paper
-from papers.serializers import PaperSerializer
-from workspaces.models import Message, Workspace, WorkspacePaper
+from papers.serializers import ChunkSerializer, PaperSerializer
+from workspaces.models import Message, MessageCitation, Workspace, WorkspacePaper
 
 
 class WorkspaceSerializer(ModelSerializer):
@@ -34,8 +34,19 @@ class WorkspacePaperSerializer(ModelSerializer):
 		return data
 
 
+class MessageCitationSerializer(ModelSerializer):
+	chunk = ChunkSerializer(read_only=True)
+
+	class Meta:
+		model = MessageCitation
+		fields = [MessageCitation.fields.number, MessageCitation.fields.chunk]
+		read_only_fields = fields
+
+
 class MessageSerializer(ModelSerializer):
+	citations = MessageCitationSerializer(many=True, read_only=True)
+
 	class Meta:
 		model = Message
-		fields = [Message.fields.id, Message.fields.role, Message.fields.content, Message.fields.created_at]
-		read_only_fields = [Message.fields.id, Message.fields.role, Message.fields.created_at]
+		read_only_fields = [Message.fields.id, Message.fields.role, Message.fields.created_at, 'citations']
+		fields = [*read_only_fields, Message.fields.content]

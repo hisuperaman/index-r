@@ -1,14 +1,19 @@
+import json
+from unittest.mock import patch
+
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
-from django.urls import reverse
+from django.urls import resolve, reverse
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase, APITransactionTestCase
 
 from enums.Paper import PaperSource
-from enums.Workspace import MessageRole
+from enums.Workspace import AskStage, MessageRole
 from iam.models import User
-from papers.models import Paper
-from workspaces.models import Message, Workspace, WorkspacePaper
+from papers.models import Chunk, Paper
+from papers.services import Answer
+from workspaces.models import Message, MessageCitation, Workspace, WorkspacePaper
+from workspaces.services import AskDelta, AskDone, AskService, AskStatus
 
 LIST_URL = reverse("workspace-list")
 
@@ -256,6 +261,11 @@ class MessageViewSetTests(APITestCase):
 		cls.user = User.objects.create_user(email="ada@example.com", password="password")
 		cls.other_user = User.objects.create_user(email="grace@example.com", password="password")
 		cls.workspace = Workspace.objects.create(user=cls.user, name="Retrieval")
+		cls.paper = create_paper("1706.03762")
+		cls.chunk = Chunk.objects.create(
+			paper=cls.paper, heading="Multi-Head Attention", text="Heads attend jointly.", start_page=4, end_page=4,
+			chunk_index=0,
+		)
 
 	def setUp(self):
 		self.client.force_authenticate(self.user)
@@ -263,27 +273,97 @@ class MessageViewSetTests(APITestCase):
 	def list_url(self, workspace: Workspace | None = None) -> str:
 		return reverse("workspace-message-list", args=[(workspace or self.workspace).pk])
 
-	def test_posts_a_user_message(self):
-		response = self.client.post(self.list_url(), {"content": "Which models beat 0.9 F1 on MMLU?"})
+	def stream_url(self, workspace: Workspace | None = None) -> str:
+		return reverse("workspace-message-stream", args=[(workspace or self.workspace).pk])
+
+	def answered(self, question: Message):
+		yield AskStatus(AskStage.SEARCHING)
+		yield AskDelta("Heads attend jointly [1].")
+		yield AskDone(AskService.save_answer(question.workspace, Answer(
+			content="Heads attend jointly [1].", citations={1: self.chunk}, is_insufficient_context=False,
+		)))
+
+	def failing(self, question: Message):
+		yield AskStatus(AskStage.SEARCHING)
+		raise RuntimeError("Cohere is down")
+
+	def post(self, url: str, data: dict, ask=None, **headers):
+		with patch.object(AskService, "ask", side_effect=ask or self.answered) as mock:
+			response = self.client.post(url, data, **headers)
+			if response.streaming:
+				response.events = self.read_events(response)
+		self.ask = mock
+		return response
+
+	@staticmethod
+	def read_events(response) -> list[tuple[str, dict]]:
+		body = b"".join(response.streaming_content).decode()
+		events = []
+		for block in filter(None, body.split("\n\n")):
+			name, data = block.split("\n")
+			events.append((name.removeprefix("event: "), json.loads(data.removeprefix("data: "))))
+		return events
+
+	def test_answers_a_question_with_the_cited_assistant_message(self):
+		response = self.post(self.list_url(), {"content": "How does multi-head attention work?"})
 
 		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-		message = Message.objects.get()
-		self.assertEqual(
-			(message.workspace, message.role, message.content),
-			(self.workspace, MessageRole.USER, "Which models beat 0.9 F1 on MMLU?"),
-		)
-		self.assertEqual(response.data["role"], MessageRole.USER)
+		self.assertEqual(response.data["role"], MessageRole.ASSISTANT)
+		self.assertEqual(response.data["content"], "Heads attend jointly [1].")
+		[citation] = response.data["citations"]
+		self.assertEqual(citation["number"], 1)
+		self.assertEqual(citation["chunk"]["citation"], "Paper 1706.03762, §Multi-Head Attention, p.4")
+		self.assertEqual(citation["chunk"]["paper"]["id"], str(self.paper.id))
 
-	def test_the_role_cannot_be_written(self):
-		self.client.post(self.list_url(), {"content": "Hello", "role": MessageRole.ASSISTANT})
+	def test_saves_the_question_as_the_callers_message(self):
+		self.post(self.list_url(), {"content": "How does multi-head attention work?", "role": MessageRole.ASSISTANT})
 
-		self.assertEqual(Message.objects.get().role, MessageRole.USER)
+		question = Message.objects.get(role=MessageRole.USER)
+		self.assertEqual((question.workspace, question.content), (self.workspace, "How does multi-head attention work?"))
+		self.ask.assert_called_once_with(question)
 
 	def test_blank_content_is_a_400_on_content(self):
-		response = self.client.post(self.list_url(), {"content": "   "})
+		response = self.post(self.list_url(), {"content": "   "})
 
 		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 		self.assertIn("content", response.data)
+		self.ask.assert_not_called()
+
+	def test_streams_status_deltas_and_the_final_message(self):
+		response = self.post(self.stream_url(), {"content": "How does multi-head attention work?"})
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(response["Content-Type"], "text/event-stream")
+		self.assertEqual(response["Cache-Control"], "no-cache")
+		self.assertEqual([name for name, _ in response.events], ["status", "delta", "message"])
+		self.assertEqual(response.events[0][1], {"stage": "searching", "label": "Searching the corpus"})
+		self.assertEqual(response.events[1][1], {"content": "Heads attend jointly [1]."})
+		message = response.events[2][1]
+		self.assertEqual((message["role"], message["citations"][0]["number"]), (MessageRole.ASSISTANT, 1))
+
+	def test_streams_for_a_client_that_only_accepts_event_streams(self):
+		response = self.post(self.stream_url(), {"content": "Hello?"}, HTTP_ACCEPT="text/event-stream")
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(response.events[-1][0], "message")
+
+	def test_a_failed_stream_ends_with_an_error_event(self):
+		with self.assertLogs("workspaces.views", "ERROR"):
+			response = self.post(self.stream_url(), {"content": "Hello?"}, ask=self.failing)
+
+		self.assertEqual([name for name, _ in response.events], ["status", "error"])
+		self.assertIn("detail", response.events[-1][1])
+
+	def test_a_blank_streamed_question_is_a_400_on_content(self):
+		response = self.post(self.stream_url(), {"content": ""}, HTTP_ACCEPT="text/event-stream")
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertIn("content", json.loads(response.content))
+		self.ask.assert_not_called()
+
+	def test_asking_runs_outside_the_request_transaction(self):
+		for url in (self.list_url(), self.stream_url()):
+			self.assertEqual(resolve(url).func._non_atomic_requests, {"default"})
 
 	def test_lists_the_workspaces_messages_newest_first(self):
 		first = Message.objects.create(workspace=self.workspace, role=MessageRole.USER, content="Question")
@@ -296,13 +376,17 @@ class MessageViewSetTests(APITestCase):
 
 		self.assertEqual([row["id"] for row in response.data["results"]], [str(second.id), str(first.id)])
 
-	def test_list_query_count_does_not_grow_with_rows(self):
-		Message.objects.create(workspace=self.workspace, role=MessageRole.USER, content="0")
+	def test_list_query_count_does_not_grow_with_rows_or_citations(self):
+		def add_answer():
+			message = Message.objects.create(workspace=self.workspace, role=MessageRole.ASSISTANT, content="A [1].")
+			MessageCitation.objects.create(message=message, chunk=self.chunk, number=1)
+
+		add_answer()
 		with CaptureQueriesContext(connection) as one:
 			self.client.get(self.list_url())
 
-		for index in range(1, 5):
-			Message.objects.create(workspace=self.workspace, role=MessageRole.USER, content=str(index))
+		for _ in range(4):
+			add_answer()
 		with CaptureQueriesContext(connection) as five:
 			response = self.client.get(self.list_url())
 
@@ -320,12 +404,43 @@ class MessageViewSetTests(APITestCase):
 		other = Workspace.objects.create(user=self.other_user, name="Private")
 
 		self.assertEqual(self.client.get(self.list_url(other)).status_code, status.HTTP_404_NOT_FOUND)
-		self.assertEqual(
-			self.client.post(self.list_url(other), {"content": "Hello"}).status_code, status.HTTP_404_NOT_FOUND,
-		)
-		self.assertFalse(Message.objects.exists())
+
+	def test_cannot_ask_in_another_users_workspace(self):
+		other = Workspace.objects.create(user=self.other_user, name="Private")
+
+		self.assertEqual(self.post(self.list_url(other), {"content": "Hello"}).status_code, status.HTTP_404_NOT_FOUND)
+		self.ask.assert_not_called()
+
+	def test_cannot_stream_in_another_users_workspace(self):
+		other = Workspace.objects.create(user=self.other_user, name="Private")
+
+		self.assertEqual(self.post(self.stream_url(other), {"content": "Hello"}).status_code, status.HTTP_404_NOT_FOUND)
+		self.ask.assert_not_called()
 
 	def test_requires_login(self):
 		self.client.force_authenticate(None)
 
 		self.assertEqual(self.client.get(self.list_url()).status_code, status.HTTP_401_UNAUTHORIZED)
+		self.assertEqual(self.post(self.stream_url(), {"content": "Hello"}).status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class MessageAskFailureTests(APITransactionTestCase):
+	"""Runs without a test transaction, as asking does in production."""
+
+	def setUp(self):
+		user = User.objects.create_user(email="ada@example.com", password="password")
+		self.workspace = Workspace.objects.create(user=user, name="Retrieval")
+		self.client.force_authenticate(user)
+
+	def test_a_failed_answer_is_a_503_and_keeps_the_question(self):
+		def failing(question):
+			yield AskStatus(AskStage.SEARCHING)
+			raise RuntimeError("Cohere is down")
+
+		with patch.object(AskService, "ask", side_effect=failing), self.assertLogs("workspaces.views", "ERROR"):
+			response = self.client.post(
+				reverse("workspace-message-list", args=[self.workspace.pk]), {"content": "Hello?"},
+			)
+
+		self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+		self.assertQuerySetEqual(Message.objects.values_list("role", "content"), [(MessageRole.USER, "Hello?")])

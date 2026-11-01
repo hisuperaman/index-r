@@ -187,6 +187,7 @@ shows weak precision, the upgrade path is a true-BM25 PostgreSQL extension, whic
 | `Workspace` | `workspaces` | A user's topic-scoped space; owns its chat and its paper list |
 | `WorkspacePaper` | `workspaces` | Which papers from the shared corpus are mentioned in a workspace (unique per workspace; a paper in use cannot be deleted) |
 | `Message` | `workspaces` | A chat message in a workspace (`user` or `assistant`) |
+| `MessageCitation` | `workspaces` | A chunk an assistant message cites as `[n]` |
 | `Paper` | `papers` | A paper in the shared corpus: source, external ID, DOI, title, abstract, venue, citation count, publication date and precision, URLs, and when ingestion completed or failed (status is derived) |
 | `Author`, `PaperAuthor` | `papers` | Authors (with optional ORCID) and their order on each paper |
 | `Chunk` | `papers` | A section-aligned piece of a paper: heading, text, page range, index, and a weighted full-text vector |
@@ -219,7 +220,8 @@ organisations).
 | Discovery (`DiscoveryService`: expanded queries → all sources → dedupe → abstract filter with Cohere → store and queue ingestion) | `papers/services/` | Done |
 | Corpus check before discovery (`RetrievalService`: multi-query search → rerank → two-gate `needs_discovery`, thresholds in settings) | `papers/services/` | Done |
 | Grounded answers (`AnswerService`: numbered passages → LLM → `[n]` markers mapped to chunks, `Chunk.citation` labels) | `papers/services/` | Done |
-| Ask endpoint (wiring retrieval, discovery and answers into chat), streaming, admin panel, MCP, live tracking | — | Planned |
+| Ask: `POST /api/workspaces/<id>/messages/` (JSON) and `…/messages/stream/` (server-sent events) run expand → search → discover and wait for ingestion if needed → rerank → answer, saving the assistant message with its `MessageCitation`s and adding cited papers to the workspace (`AskService`) | `workspaces/` | Done |
+| Admin panel, MCP, live tracking | — | Planned |
 
 The service classes are independent of the HTTP layer, so the API, background jobs and the MCP server can all call the
 same code.

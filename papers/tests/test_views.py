@@ -48,6 +48,7 @@ class ChunkSearchViewTests(APITestCase):
 			{"heading": "Attention", "text": "Multi-head attention.", "start_page": 1, "end_page": 2, "chunk_index": 0},
 		)
 		self.assertEqual(result["paper"]["id"], str(self.paper.id))
+		self.assertEqual(result["citation"], "Attention Is All You Need, §Attention, pp.1–2")
 		self.assertEqual(result["paper"]["title"], "Attention Is All You Need")
 		self.assertGreater(result["rank"], 0)
 

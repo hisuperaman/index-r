@@ -21,6 +21,16 @@ class LLMServiceTests(SimpleTestCase):
 
 		self.assertIsInstance(output, Queries)
 
+	def test_streams_ending_with_the_complete_output(self):
+		with self.settings(LLM='test'):
+			outputs = list(LLMService.stream("Expand: MMLU F1", Queries, "Return keyword queries."))
+
+		self.assertIsInstance(outputs[-1], Queries)
+
+	def test_streaming_without_a_model_is_a_configuration_error(self):
+		with self.settings(LLM=None), self.assertRaises(ImproperlyConfigured):
+			list(LLMService.stream("Expand: MMLU F1", Queries, "Return keyword queries."))
+
 	def test_reuses_the_agent_for_the_same_model_and_instructions(self):
 		first = LLMService.get_agent('test', Queries, "Return keyword queries.")
 

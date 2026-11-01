@@ -1,12 +1,30 @@
+import json
+import logging
+from collections.abc import Iterator
+
+from django.db import transaction
+from django.db.models import Prefetch
+from django.http import StreamingHttpResponse
+from django.utils.decorators import method_decorator
+from rest_framework import status
+from rest_framework.decorators import action
 from rest_framework.mixins import CreateModelMixin, DestroyModelMixin, ListModelMixin
+from rest_framework.renderers import JSONRenderer
+from rest_framework.response import Response
+from rest_framework.utils.encoders import JSONEncoder
 from rest_framework.viewsets import GenericViewSet, ModelViewSet
 
 from enums.Workspace import MessageRole
 from iam.mixins import UserScopedMixin
 from iam.permissions import IsOwner
+from server.renderers import EventStreamRenderer
+from workspaces.exceptions import AnswerUnavailable
 from workspaces.mixins import WorkspaceScopedMixin
-from workspaces.models import Message, Workspace, WorkspacePaper
+from workspaces.models import Message, MessageCitation, Workspace, WorkspacePaper
 from workspaces.serializers import MessageSerializer, WorkspacePaperSerializer, WorkspaceSerializer
+from workspaces.services import AskDelta, AskDone, AskEvent, AskService, AskStatus
+
+logger = logging.getLogger(__name__)
 
 
 class WorkspaceViewSet(UserScopedMixin, ModelViewSet):
@@ -30,12 +48,59 @@ class WorkspacePaperViewSet(WorkspaceScopedMixin, ListModelMixin, CreateModelMix
 		return super().get_serializer(*args, workspace=self.workspace, **kwargs)
 
 
+@method_decorator(transaction.non_atomic_requests, name='dispatch')
 class MessageViewSet(WorkspaceScopedMixin, ListModelMixin, CreateModelMixin, GenericViewSet):
-	"""Lists the chat in one of the caller's workspaces, newest first, and posts the caller's messages to it."""
-	queryset = Message.objects.all()
+	"""Lists the chat in one of the caller's workspaces and answers the questions posted to it."""
+	queryset = Message.objects.prefetch_related(Prefetch(
+		Message.fields.citations,
+		queryset=MessageCitation.objects.select_related(f'{MessageCitation.fields.chunk}__paper'),
+	))
 	serializer_class = MessageSerializer
 	ordering_fields = [Message.fields.created_at]
 	ordering = [Message.fields.created_at.desc()]
 
-	def perform_create(self, serializer):
-		serializer.save(workspace=self.workspace, role=MessageRole.USER)
+	def create(self, request, *args, **kwargs):
+		question = self.save_question()
+		try:
+			answer = next(event.message for event in AskService.ask(question) if isinstance(event, AskDone))
+		except Exception as error:
+			logger.exception("Answering message %s failed", question.pk)
+			raise AnswerUnavailable() from error
+		return Response(self.get_serializer(self.get_queryset().get(pk=answer.pk)).data, status=status.HTTP_201_CREATED)
+
+	@action(detail=False, methods=['post'], renderer_classes=[JSONRenderer, EventStreamRenderer])
+	def stream(self, request, *args, **kwargs):
+		question = self.save_question()
+		response = StreamingHttpResponse(self.event_stream(question), content_type='text/event-stream')
+		response['Cache-Control'] = 'no-cache'
+		response['X-Accel-Buffering'] = 'no'
+		return response
+
+	def save_question(self) -> Message:
+		"""Validates the posted content and saves it as the caller's question."""
+		serializer = self.get_serializer(data=self.request.data)
+		serializer.is_valid(raise_exception=True)
+		return serializer.save(workspace=self.workspace, role=MessageRole.USER)
+
+	def event_stream(self, question: Message) -> Iterator[str]:
+		"""Formats the ask's events as server-sent events, ending with an error event if it fails."""
+		try:
+			for event in AskService.ask(question):
+				yield self.format_event(*self.to_event(event))
+		except Exception:
+			logger.exception("Answering message %s failed", question.pk)
+			yield self.format_event('error', {'detail': AnswerUnavailable.default_detail})
+
+	def to_event(self, event: AskEvent) -> tuple[str, dict]:
+		"""The SSE event name and data for one ask event."""
+		match event:
+			case AskStatus(stage):
+				return 'status', {'stage': stage, 'label': stage.label}
+			case AskDelta(content):
+				return 'delta', {'content': content}
+			case AskDone(message):
+				return 'message', self.get_serializer(self.get_queryset().get(pk=message.pk)).data
+
+	@staticmethod
+	def format_event(name: str, data: dict) -> str:
+		return f"event: {name}\ndata: {json.dumps(data, cls=JSONEncoder)}\n\n"

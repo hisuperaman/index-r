@@ -9,7 +9,8 @@ from django.utils import timezone
 from enums.Paper import IngestionStatus, PaperSource
 from papers.definitions import ExtractedChunk, ExtractedPaper
 from papers.models import Chunk, Paper
-from papers.services import PdfDownloadError, PdfDownloadService, TextExtractorService
+from papers.exceptions import PdfDownloadError
+from papers.services import PdfDownloadService, TextExtractorService
 from papers.tasks import ingest_paper, queue_ingest_paper
 
 PDF_URL = "https://arxiv.org/pdf/1706.03762"
