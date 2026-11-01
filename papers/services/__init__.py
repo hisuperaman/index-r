@@ -3,3 +3,6 @@ from .PaperStoreService import PaperStoreService
 from .PdfDownloadService import PdfDownloadError, PdfDownloadService
 from .QueryExpansionService import QueryExpansionService
 from .RerankService import RerankService
+from .RetrievalService import Retrieval, RetrievalService
+from .DiscoveryService import DiscoveryService
+from .AnswerService import Answer, AnswerService

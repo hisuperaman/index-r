@@ -62,6 +62,12 @@ class RerankServiceTests(TestCase):
 			top_n=2,
 		)
 
+	def test_scores_every_document_by_default(self):
+		self.respond((1, 0.8), (0, 0.2))
+
+		self.assertEqual(RerankService.score(QUESTION, ["first", "second"]), [(1, 0.8), (0, 0.2)])
+		self.assertEqual(self.client.rerank.call_args.kwargs["top_n"], 2)
+
 	def test_no_chunks_skips_cohere(self):
 		self.assertEqual(RerankService.rerank(QUESTION, []), [])
 

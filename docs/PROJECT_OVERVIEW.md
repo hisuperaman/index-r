@@ -216,7 +216,10 @@ organisations).
 | Workspace papers `/api/workspaces/<id>/papers/` (list, add, remove) and chat messages `/api/workspaces/<id>/messages/` (list, post) | `workspaces/` | Done |
 | Permissions: shared `BasePermission` (login required, plus per-request and per-object hooks), `IsOwner`; `UserScopedMixin` scopes views to the caller | `server/permissions.py`, `iam/` | Done |
 | Workspace dashboard UI | — | Planned |
-| Discovery pipeline, synthesis (assistant replies), admin panel, MCP, live tracking | — | Planned |
+| Discovery (`DiscoveryService`: expanded queries → all sources → dedupe → abstract filter with Cohere → store and queue ingestion) | `papers/services/` | Done |
+| Corpus check before discovery (`RetrievalService`: multi-query search → rerank → two-gate `needs_discovery`, thresholds in settings) | `papers/services/` | Done |
+| Grounded answers (`AnswerService`: numbered passages → LLM → `[n]` markers mapped to chunks, `Chunk.citation` labels) | `papers/services/` | Done |
+| Ask endpoint (wiring retrieval, discovery and answers into chat), streaming, admin panel, MCP, live tracking | — | Planned |
 
 The service classes are independent of the HTTP layer, so the API, background jobs and the MCP server can all call the
 same code.

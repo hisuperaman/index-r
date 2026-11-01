@@ -1,4 +1,6 @@
+from functools import reduce
 from math import log
+from operator import or_
 
 from django.contrib.postgres.search import SearchQuery, SearchRank
 from django.db.models import Case, F, FloatField, Q, QuerySet, Value, When
@@ -36,9 +38,11 @@ class ChunkQuerySet(QuerySet):
 	RECENCY_YEARS = 5
 	RECENCY_BOOST = 0.2
 
-	def search(self, text: str):
-		"""Chunks matching `text` in web-search syntax, annotated with their `rank` and boosted `score`, best first."""
-		query = SearchQuery(text, config=self.SEARCH_CONFIG, search_type="websearch")
+	def search(self, *texts: str):
+		"""Chunks matching any of `texts` in web-search syntax, annotated with their `rank` and boosted `score`, best first."""
+		if not texts:
+			return self.none()
+		query = reduce(or_, (SearchQuery(text, config=self.SEARCH_CONFIG, search_type="websearch") for text in texts))
 		return (
 			self.filter(**{self.model.fields.search_vector: query})
 			.annotate(rank=SearchRank(F(self.model.fields.search_vector), query))
