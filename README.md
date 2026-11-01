@@ -34,6 +34,11 @@ EMAIL_PORT=587
 EMAIL_USE_TLS=True
 EMAIL_HOST_USER=YOUR_EMAIL_ADDRESS
 EMAIL_HOST_PASSWORD=YOUR_EMAIL_PASSWORD
+REDIS_HOST=localhost
+REDIS_PORT=6379
+# '<provider>:<model>', plus that provider's key: ANTHROPIC_API_KEY, OPENAI_API_KEY or GOOGLE_API_KEY
+LLM=anthropic:claude-sonnet-5-5
+ANTHROPIC_API_KEY=
 ```
 
 4. Apply migrations:
@@ -52,6 +57,13 @@ python manage.py createsuperuser
 
 ```bash
 python manage.py runserver
+```
+
+7. Start Redis, then the Celery worker, which ingests papers in the background (it uses Redis database 0 as its
+   broker):
+
+```bash
+celery -A server worker --queues=default --pool=threads --concurrency=4 --loglevel=INFO
 ```
 
 ### Frontend Setup

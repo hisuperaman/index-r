@@ -187,12 +187,14 @@ shows weak precision, the upgrade path is a true-BM25 PostgreSQL extension, whic
 | `Workspace` | `workspaces` | A user's topic-scoped space; owns its chat and its paper list |
 | `WorkspacePaper` | `workspaces` | Which papers from the shared corpus are mentioned in a workspace (unique per workspace; a paper in use cannot be deleted) |
 | `Message` | `workspaces` | A chat message in a workspace (`user` or `assistant`) |
-| `Paper` | `papers` | A paper in the shared corpus: source, external ID, DOI, title, abstract, venue, citation count, publication date and precision, URLs, ingestion status |
+| `Paper` | `papers` | A paper in the shared corpus: source, external ID, DOI, title, abstract, venue, citation count, publication date and precision, URLs, and when ingestion completed or failed (status is derived) |
 | `Author`, `PaperAuthor` | `papers` | Authors (with optional ORCID) and their order on each paper |
 | `Chunk` | `papers` | A section-aligned piece of a paper: heading, text, page range, index, and a weighted full-text vector |
+| `Citation` | `papers` | A paper → cited paper edge, used for graph expansion and for "new citations" in live tracking |
+| `TrackedTopic` | `workspaces` | A query a workspace re-runs to find new papers (unique per workspace) |
 
-**Planned:** `Citation` (paper → cited paper edges, used for graph expansion and for "new citations" in live tracking),
-`TrackedTopic`, update events for live tracking, the admin request queue, and a nullable `User.organization_id`.
+**Planned:** update events for live tracking, the admin request queue, and `User.organization_id` (added with
+organisations).
 
 ---
 
@@ -204,9 +206,15 @@ shows weak precision, the upgrade path is a true-BM25 PostgreSQL extension, whic
 | Core models: papers, authors, chunks, workspaces, messages, workspace papers | `papers/models.py`, `workspaces/models.py` | Done |
 | Full-text index on chunks (weighted trigger + GIN) | `papers/migrations/0002_add_search_vector_trigger.py` | Done |
 | Paper fetchers for arXiv, OpenAlex and Semantic Scholar, plus an orchestrator that queries them in parallel and de-duplicates | `papers/services/fetchers/` | Done |
-| PDF extraction and section-based chunking (`TextExtractorService`) and chunk storage (`ChunkStoreService`) | `papers/services/` | Done |
-| Workspace CRUD API, workspace dashboard UI | open PRs | In progress |
-| Search endpoint, LLM and reranker interfaces, discovery pipeline, synthesis, admin panel, MCP, live tracking | — | Planned |
+| PDF extraction and section-based chunking (`TextExtractorService`) and chunk storage (`Paper.replace_chunks`) | `papers/services/`, `papers/models.py` | Done |
+| Storing fetched papers and authors without duplicates (`PaperStoreService`), PDF download (`PdfDownloadService`) | `papers/services/` | Done |
+| Chunk search endpoint `GET /api/papers/chunks/search/?q=` (`Chunk.objects.search`) | `papers/` | Done |
+| Pluggable LLM interface (`LLMService`, pydantic-ai, `LLM=<provider>:<model>`) | `server/services/` | Done |
+| Celery + Redis worker, `ingest_paper` task (download → extract → store chunks) | `server/celery.py`, `papers/tasks.py` | Done |
+| Workspace CRUD API `/api/workspaces/`, scoped to the caller | `workspaces/` | Done |
+| Permissions: shared `BasePermission` (login required, plus per-request and per-object hooks), `IsOwner`; `UserScopedMixin` scopes views to the caller | `server/permissions.py`, `iam/` | Done |
+| Workspace dashboard UI | — | Planned |
+| Reranker interface, discovery pipeline, synthesis, admin panel, MCP, live tracking | — | Planned |
 
 The service classes are independent of the HTTP layer, so the API, background jobs and the MCP server can all call the
 same code.

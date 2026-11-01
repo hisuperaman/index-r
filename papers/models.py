@@ -1,18 +1,23 @@
 from django.contrib.postgres.indexes import GinIndex
+from django.db import transaction
 from django.contrib.postgres.search import SearchVectorField
 from django.db.models import (
-	CharField, TextField, DateField,
+	CharField, TextField, DateField, DateTimeField,
 	ForeignKey, ManyToManyField, PositiveIntegerField,
 	Index, Q, F, CheckConstraint, UniqueConstraint, CASCADE, URLField,
 )
 
 from enums.Paper import PaperSource, DatePrecision, IngestionStatus
+from papers.definitions import ExtractedChunk
+from papers.querysets import AuthorQuerySet, ChunkQuerySet, PaperQuerySet
 from server.models import BaseModel, PrimaryModel
 
 
 class Author(BaseModel):
 	name = CharField(max_length=255)
 	orcid = CharField(max_length=19, blank=True, null=True, unique=True)
+
+	objects = AuthorQuerySet.as_manager()
 
 	class Meta:
 		indexes = [
@@ -44,11 +49,17 @@ class Paper(PrimaryModel):
 		through="PaperAuthor",
 		related_name="papers",
 	)
-	ingestion_status = CharField(
-		max_length=20,
-		choices=IngestionStatus,
-		default=IngestionStatus.PENDING,
+	ingested_at = DateTimeField(blank=True, null=True)
+	ingestion_failed_at = DateTimeField(blank=True, null=True)
+	references = ManyToManyField(
+		"self",
+		through="Citation",
+		through_fields=("citing_paper", "cited_paper"),
+		symmetrical=False,
+		related_name="cited_by",
 	)
+
+	objects = PaperQuerySet.as_manager()
 
 	class Meta:
 		constraints = [
@@ -62,6 +73,10 @@ class Paper(PrimaryModel):
 						Q(publication_date__isnull=False, publication_date_precision__isnull=False)
 				),
 				name="paper_pub_date_and_precision_consistent",
+			),
+			CheckConstraint(
+				condition=Q(ingested_at__isnull=True) | Q(ingestion_failed_at__isnull=True),
+				name="paper_ingested_or_failed_not_both",
 			),
 			CheckConstraint(
 				condition=(
@@ -78,11 +93,49 @@ class Paper(PrimaryModel):
 		indexes = [
 			Index(fields=["-publication_date"]),
 			Index(fields=["-citation_count"]),
-			Index(fields=["ingestion_status"]),
 		]
 
 	def __str__(self):
 		return f"[{self.source}] {self.title[:50]}"
+
+	@transaction.atomic
+	def replace_chunks(self, chunks: list[ExtractedChunk]) -> list["Chunk"]:
+		"""Replaces the paper's chunks with `chunks`."""
+		self.chunks.all().delete()
+		return Chunk.objects.bulk_create(
+			Chunk(
+				paper=self,
+				heading=chunk.heading,
+				text=chunk.text,
+				start_page=chunk.start_page,
+				end_page=chunk.end_page,
+				chunk_index=chunk.chunk_index,
+			)
+			for chunk in chunks
+		)
+
+	@property
+	def ingestion_status(self) -> IngestionStatus:
+		if self.ingested_at:
+			return IngestionStatus.COMPLETED
+		if self.ingestion_failed_at:
+			return IngestionStatus.FAILED
+		return IngestionStatus.PENDING
+
+
+class Citation(BaseModel):
+	"""An edge from a paper to one paper in its reference list."""
+	citing_paper = ForeignKey(Paper, on_delete=CASCADE, related_name="outgoing_citations")
+	cited_paper = ForeignKey(Paper, on_delete=CASCADE, related_name="incoming_citations")
+
+	class Meta:
+		constraints = [
+			UniqueConstraint(fields=["citing_paper", "cited_paper"], name="unique_citation"),
+			CheckConstraint(condition=~Q(citing_paper=F("cited_paper")), name="citation_not_self"),
+		]
+
+	def __str__(self):
+		return f"{self.citing_paper_id} cites {self.cited_paper_id}"
 
 
 class PaperAuthor(BaseModel):
@@ -109,6 +162,8 @@ class Chunk(BaseModel):
 	start_page = PositiveIntegerField()
 	end_page = PositiveIntegerField()
 	chunk_index = PositiveIntegerField()
+
+	objects = ChunkQuerySet.as_manager()
 
 	class Meta:
 		constraints = [
