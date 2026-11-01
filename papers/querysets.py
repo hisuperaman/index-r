@@ -1,5 +1,10 @@
+from math import log
+
 from django.contrib.postgres.search import SearchQuery, SearchRank
-from django.db.models import F, Q, QuerySet
+from django.db.models import Case, F, FloatField, Q, QuerySet, Value, When
+from django.db.models.functions import Cast, Coalesce, ExtractYear, Ln
+from django.db.models.lookups import LessThanOrEqual
+from django.utils import timezone
 
 
 class AuthorQuerySet(QuerySet):
@@ -27,12 +32,54 @@ class PaperQuerySet(QuerySet):
 
 class ChunkQuerySet(QuerySet):
 	SEARCH_CONFIG = "english"
+	CITATION_WEIGHT = 0.1
+	RECENCY_YEARS = 5
+	RECENCY_BOOST = 0.2
 
 	def search(self, text: str):
-		"""Chunks matching `text` in web-search syntax, best first, each annotated with its `rank`."""
+		"""Chunks matching `text` in web-search syntax, annotated with their `rank` and boosted `score`, best first."""
 		query = SearchQuery(text, config=self.SEARCH_CONFIG, search_type="websearch")
 		return (
 			self.filter(**{self.model.fields.search_vector: query})
 			.annotate(rank=SearchRank(F(self.model.fields.search_vector), query))
-			.order_by("-rank", self.model.fields.id)
+			.annotate(score=F("rank") * self.citation_boost() * self.recency_boost())
+			.order_by("-score", self.model.fields.id)
+		)
+
+	def filter_papers(
+			self, year_from: int | None = None, year_to: int | None = None, venue: str | None = None,
+			min_citations: int | None = None,
+	):
+		"""Chunks whose paper was published in the year range, at a matching venue, with enough citations."""
+		filters = Q()
+		if year_from is not None:
+			filters &= Q(paper__publication_date__year__gte=year_from)
+		if year_to is not None:
+			filters &= Q(paper__publication_date__year__lte=year_to)
+		if venue:
+			filters &= Q(paper__venue__icontains=venue)
+		if min_citations is not None:
+			filters &= Q(paper__citation_count__gte=min_citations)
+		return self.filter(filters)
+
+	@classmethod
+	def citation_boost(cls):
+		"""1 + CITATION_WEIGHT × log10(citations + 1)."""
+		citations = Cast(Coalesce("paper__citation_count", 0), FloatField()) + Value(1.0)
+		return Value(1.0) + Ln(citations) * Value(cls.CITATION_WEIGHT / log(10))
+
+	@classmethod
+	def recency_boost(cls):
+		"""Up to 1 + RECENCY_BOOST for this year's papers, falling to 1 at RECENCY_YEARS old and for undated papers."""
+		age = Value(timezone.now().year) - ExtractYear("paper__publication_date")
+		return Case(
+			When(paper__publication_date__isnull=True, then=Value(1.0)),
+			When(LessThanOrEqual(age, Value(0)), then=Value(1.0 + cls.RECENCY_BOOST)),
+			When(
+				LessThanOrEqual(age, Value(cls.RECENCY_YEARS)),
+				then=Value(1.0 + cls.RECENCY_BOOST) - Cast(age, FloatField()) * Value(
+					cls.RECENCY_BOOST / cls.RECENCY_YEARS),
+			),
+			default=Value(1.0),
+			output_field=FloatField(),
 		)

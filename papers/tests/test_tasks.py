@@ -2,6 +2,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
+from django.db import connection
 from django.test import TestCase
 from django.utils import timezone
 
@@ -9,7 +10,7 @@ from enums.Paper import IngestionStatus, PaperSource
 from papers.definitions import ExtractedChunk, ExtractedPaper
 from papers.models import Chunk, Paper
 from papers.services import PdfDownloadError, PdfDownloadService, TextExtractorService
-from papers.tasks import ingest_paper
+from papers.tasks import ingest_paper, queue_ingest_paper
 
 PDF_URL = "https://arxiv.org/pdf/1706.03762"
 
@@ -89,3 +90,30 @@ class IngestPaperTests(TestCase):
 			ingest_paper(paper_id)
 
 		download.assert_not_called()
+
+
+class QueueIngestPaperTests(TestCase):
+
+	def test_queues_the_paper_once_the_transaction_commits(self):
+		paper = Paper.objects.create(
+			source=PaperSource.ARXIV, external_id="1706.03762", title="Attention Is All You Need",
+			url="https://arxiv.org/abs/1706.03762", pdf_url=PDF_URL,
+		)
+
+		with patch.object(ingest_paper, "delay") as delay:
+			with self.captureOnCommitCallbacks(execute=True):
+				queue_ingest_paper(paper)
+				delay.assert_not_called()
+
+		delay.assert_called_once_with(paper.pk)
+
+	def test_a_broker_failure_cannot_fail_the_transaction(self):
+		paper = Paper.objects.create(
+			source=PaperSource.ARXIV, external_id="1706.03762", title="Attention Is All You Need",
+			url="https://arxiv.org/abs/1706.03762",
+		)
+
+		queue_ingest_paper(paper)
+
+		_, _, robust = connection.run_on_commit[-1]
+		self.assertTrue(robust)

@@ -39,6 +39,7 @@ REDIS_PORT=6379
 # '<provider>:<model>', plus that provider's key: ANTHROPIC_API_KEY, OPENAI_API_KEY or GOOGLE_API_KEY
 LLM=anthropic:claude-sonnet-5-5
 ANTHROPIC_API_KEY=
+COHERE_API_KEY=
 ```
 
 4. Apply migrations:

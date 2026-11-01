@@ -1,4 +1,5 @@
 import logging
+from functools import partial
 
 from celery import shared_task
 from django.db import transaction
@@ -30,3 +31,8 @@ def ingest_paper(paper_id: str) -> None:
 	with transaction.atomic():
 		paper.replace_chunks(extracted.chunks)
 		Paper.objects.filter(pk=paper.pk).update(ingested_at=timezone.now())
+
+
+def queue_ingest_paper(paper: Paper) -> None:
+	"""Queues the paper's ingestion once the surrounding transaction commits."""
+	transaction.on_commit(partial(ingest_paper.delay, paper.pk), robust=True)
