@@ -38,7 +38,8 @@ class PaperStoreService:
 					pdf_url=fetched.pdf_url,
 				)
 				cls.add_authors(paper, fetched.authors)
-				return paper
+			cls.queue_ingestion(paper)
+			return paper
 		except IntegrityError:
 			# A concurrent store saved the same paper between the lookup and the insert.
 			paper = Paper.objects.matching(fetched.source, fetched.external_id, doi).first()
@@ -60,6 +61,14 @@ class PaperStoreService:
 		if changed:
 			paper.save(update_fields=[*changed, Paper.fields.updated_at])
 		return paper
+
+	@staticmethod
+	def queue_ingestion(paper: Paper) -> None:
+		"""Queues the paper's ingestion when it has an open-access PDF."""
+		from papers.tasks import queue_ingest_paper
+
+		if paper.pdf_url:
+			queue_ingest_paper(paper)
 
 	@staticmethod
 	def add_authors(paper: Paper, authors: list[FetchedAuthor]) -> None:

@@ -166,7 +166,7 @@ abstracts rather than full text, they are rate-limited, and they are too slow to
 | Citation graph | OpenAlex + Semantic Scholar data, stored as an edge table in PostgreSQL |
 | Discovery sources | Semantic Scholar, OpenAlex, arXiv, Crossref |
 | PDF extraction | `pymupdf4llm` (Markdown with headings and pages); GROBID if structure extraction needs to improve |
-| Reranker | Cross-encoder behind its own interface (e.g. Cohere Rerank, bge-reranker) |
+| Reranker | Cohere Rerank cross-encoder (`RerankService`, `rerank-v3.5`) |
 | LLM | Pluggable provider interface (Claude, GPT or an open model), used for query expansion and synthesis |
 | MCP server | Python `mcp` SDK, calling the same service layer as the API |
 | Background jobs | Celery + Redis + `django-celery-beat` |
@@ -208,13 +208,15 @@ organisations).
 | Paper fetchers for arXiv, OpenAlex and Semantic Scholar, plus an orchestrator that queries them in parallel and de-duplicates | `papers/services/fetchers/` | Done |
 | PDF extraction and section-based chunking (`TextExtractorService`) and chunk storage (`Paper.replace_chunks`) | `papers/services/`, `papers/models.py` | Done |
 | Storing fetched papers and authors without duplicates (`PaperStoreService`), PDF download (`PdfDownloadService`) | `papers/services/` | Done |
-| Chunk search endpoint `GET /api/papers/chunks/search/?q=` (`Chunk.objects.search`) | `papers/` | Done |
+| Chunk search endpoint `GET /api/papers/chunks/search/?q=` with recency/citation boost and year, venue and citation filters (`Chunk.objects.search`, `filter_papers`) | `papers/` | Done |
 | Pluggable LLM interface (`LLMService`, pydantic-ai, `LLM=<provider>:<model>`) | `server/services/` | Done |
-| Celery + Redis worker, `ingest_paper` task (download → extract → store chunks) | `server/celery.py`, `papers/tasks.py` | Done |
+| Celery + Redis worker, `ingest_paper` task (download → extract → store chunks), queued when a new paper with a PDF is stored | `server/celery.py`, `papers/tasks.py` | Done |
+| LLM query expansion (`QueryExpansionService`) and Cohere cross-encoder reranker (`RerankService`) | `papers/services/` | Done |
 | Workspace CRUD API `/api/workspaces/`, scoped to the caller | `workspaces/` | Done |
+| Workspace papers `/api/workspaces/<id>/papers/` (list, add, remove) and chat messages `/api/workspaces/<id>/messages/` (list, post) | `workspaces/` | Done |
 | Permissions: shared `BasePermission` (login required, plus per-request and per-object hooks), `IsOwner`; `UserScopedMixin` scopes views to the caller | `server/permissions.py`, `iam/` | Done |
 | Workspace dashboard UI | — | Planned |
-| Reranker interface, discovery pipeline, synthesis, admin panel, MCP, live tracking | — | Planned |
+| Discovery pipeline, synthesis (assistant replies), admin panel, MCP, live tracking | — | Planned |
 
 The service classes are independent of the HTTP layer, so the API, background jobs and the MCP server can all call the
 same code.

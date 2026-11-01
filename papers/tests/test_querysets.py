@@ -1,7 +1,9 @@
+from datetime import date
+
 from django.test import TestCase
 from django.utils import timezone
 
-from enums.Paper import PaperSource
+from enums.Paper import DatePrecision, PaperSource
 from papers.models import Author, Chunk, Paper
 
 
@@ -103,3 +105,77 @@ class ChunkQuerySetTests(TestCase):
 		results = Chunk.objects.filter(paper=self.paper).search("attention")
 
 		self.assertEqual(list(results), [self.heading_match, self.body_match])
+
+
+def published(year: int) -> dict:
+	return {"publication_date": date(year, 1, 1), "publication_date_precision": DatePrecision.YEAR}
+
+
+class ChunkSearchBoostTests(TestCase):
+	this_year = timezone.now().year
+
+	def add_chunk(self, external_id: str, **paper_fields) -> Chunk:
+		paper = create_paper(external_id, **paper_fields)
+		return Chunk.objects.create(
+			paper=paper, heading="Attention", text="Multi-head attention.", start_page=1, end_page=1, chunk_index=0,
+		)
+
+	def boost(self, chunk: Chunk) -> float:
+		result = Chunk.objects.filter(pk=chunk.pk).search("attention").get()
+		return result.score / result.rank
+
+	def test_an_undated_uncited_paper_is_not_boosted(self):
+		self.assertAlmostEqual(self.boost(self.add_chunk("1")), 1.0, places=5)
+
+	def test_citations_boost_by_a_tenth_per_power_of_ten(self):
+		self.assertAlmostEqual(self.boost(self.add_chunk("1", citation_count=999)), 1.3, places=5)
+
+	def test_recency_boost_falls_from_a_fifth_to_nothing_over_five_years(self):
+		self.assertAlmostEqual(self.boost(self.add_chunk("1", **published(self.this_year))), 1.2, places=5)
+		self.assertAlmostEqual(self.boost(self.add_chunk("2", **published(self.this_year - 3))), 1.08, places=5)
+		self.assertAlmostEqual(self.boost(self.add_chunk("3", **published(self.this_year - 5))), 1.0, places=5)
+		self.assertAlmostEqual(self.boost(self.add_chunk("4", **published(self.this_year - 20))), 1.0, places=5)
+
+	def test_a_paper_dated_in_the_future_gets_the_full_recency_boost(self):
+		self.assertAlmostEqual(self.boost(self.add_chunk("1", **published(self.this_year + 1))), 1.2, places=5)
+
+	def test_boosts_multiply(self):
+		chunk = self.add_chunk("1", citation_count=999, **published(self.this_year))
+
+		self.assertAlmostEqual(self.boost(chunk), 1.3 * 1.2, places=5)
+
+	def test_an_equally_matching_cited_recent_paper_ranks_first(self):
+		old = self.add_chunk("1", citation_count=0, **published(2000))
+		new = self.add_chunk("2", citation_count=500, **published(self.this_year))
+
+		self.assertEqual(list(Chunk.objects.search("attention")), [new, old])
+
+
+class ChunkFilterPapersTests(TestCase):
+	@classmethod
+	def setUpTestData(cls):
+		def add(external_id, **fields):
+			paper = create_paper(external_id, **fields)
+			return Chunk.objects.create(paper=paper, text="Attention.", start_page=1, end_page=1, chunk_index=0)
+
+		cls.neurips_2017 = add("1", venue="NeurIPS 2017", citation_count=100, **published(2017))
+		cls.acl_2019 = add("2", venue="ACL", citation_count=10, **published(2019))
+		cls.undated = add("3")
+
+	def filtered(self, **filters) -> list[Chunk]:
+		return list(Chunk.objects.filter_papers(**filters).order_by("paper__external_id"))
+
+	def test_no_filters_keeps_everything(self):
+		self.assertEqual(self.filtered(), [self.neurips_2017, self.acl_2019, self.undated])
+
+	def test_year_range_is_inclusive_and_drops_undated_papers(self):
+		self.assertEqual(self.filtered(year_from=2017, year_to=2017), [self.neurips_2017])
+		self.assertEqual(self.filtered(year_from=2018), [self.acl_2019])
+		self.assertEqual(self.filtered(year_to=2019), [self.neurips_2017, self.acl_2019])
+
+	def test_venue_matches_part_of_the_name_in_any_case(self):
+		self.assertEqual(self.filtered(venue="neurips"), [self.neurips_2017])
+
+	def test_min_citations_is_inclusive_and_drops_unknown_counts(self):
+		self.assertEqual(self.filtered(min_citations=10), [self.neurips_2017, self.acl_2019])
+		self.assertEqual(self.filtered(min_citations=11), [self.neurips_2017])

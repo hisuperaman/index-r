@@ -56,6 +56,12 @@ class Message(PrimaryModel):
 	)
 	content = TextField()
 
+	class Meta:
+		constraints = [
+			CheckConstraint(condition=~Q(content=""), name="message_content_not_blank"),
+			CheckConstraint(condition=Q(role__in=MessageRole.values), name="message_role_valid"),
+		]
+
 	def __str__(self):
 		return f"{self.role} message in {self.workspace.name}"
 

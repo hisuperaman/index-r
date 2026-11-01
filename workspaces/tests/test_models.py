@@ -5,7 +5,8 @@ from django.test import TestCase
 
 from enums.Paper import PaperSource
 from papers.models import Paper
-from workspaces.models import TrackedTopic, Workspace, WorkspacePaper
+from enums.Workspace import MessageRole
+from workspaces.models import Message, TrackedTopic, Workspace, WorkspacePaper
 
 
 class WorkspacePaperTests(TestCase):
@@ -77,3 +78,18 @@ class TrackedTopicTests(TestCase):
 		self.workspace.delete()
 
 		self.assertFalse(TrackedTopic.objects.exists())
+
+
+class MessageTests(TestCase):
+	@classmethod
+	def setUpTestData(cls):
+		user = get_user_model().objects.create_user(email="owner@example.com", password="password")
+		cls.workspace = Workspace.objects.create(user=user, name="Retrieval")
+
+	def test_content_cannot_be_blank(self):
+		with self.assertRaises(IntegrityError):
+			Message.objects.create(workspace=self.workspace, role=MessageRole.USER, content="")
+
+	def test_role_must_be_user_or_assistant(self):
+		with self.assertRaises(IntegrityError):
+			Message.objects.create(workspace=self.workspace, role="system", content="Hello")

@@ -218,3 +218,6 @@ CELERY_TASK_DEFAULT_QUEUE = 'default'
 # LLM, as '<provider>:<model>' (e.g. 'anthropic:claude-sonnet-5-5'); the provider reads its own API key from the env
 LLM = env('LLM', default=None)
 os.environ.setdefault('PYDANTIC_AI_NO_BANNER', '1')
+
+# Cohere Rerank, the cross-encoder that reranks retrieved passages
+COHERE_API_KEY = env('COHERE_API_KEY', default=None)

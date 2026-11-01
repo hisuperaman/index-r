@@ -1,9 +1,11 @@
 from datetime import date
+from unittest.mock import patch
 
 from django.test import TestCase
 
 from enums.Paper import DatePrecision, PaperSource
 from papers.models import Author, Paper
+from papers import tasks
 from papers.services import PaperStoreService
 from papers.services.fetchers.definitions import FetchedAuthor, FetchedPaper
 
@@ -102,3 +104,28 @@ class PaperStoreServiceTests(TestCase):
 		PaperStoreService.store_one(fetched_paper(source=PaperSource.OPENALEX, external_id="W1", doi=None))
 
 		self.assertEqual(Paper.objects.count(), 2)
+
+
+class PaperStoreIngestionQueueTests(TestCase):
+
+	def store(self, fetched: FetchedPaper):
+		with patch.object(tasks.ingest_paper, "delay") as delay, self.captureOnCommitCallbacks(execute=True):
+			paper = PaperStoreService.store_one(fetched)
+		return paper, delay
+
+	def test_queues_a_new_paper_with_a_pdf(self):
+		paper, delay = self.store(fetched_paper(pdf_url="https://arxiv.org/pdf/1706.03762"))
+
+		delay.assert_called_once_with(paper.pk)
+
+	def test_does_not_queue_a_new_paper_without_a_pdf(self):
+		_, delay = self.store(fetched_paper(pdf_url=None))
+
+		delay.assert_not_called()
+
+	def test_does_not_queue_a_paper_already_stored(self):
+		self.store(fetched_paper(pdf_url="https://arxiv.org/pdf/1706.03762"))
+
+		_, delay = self.store(fetched_paper(pdf_url="https://arxiv.org/pdf/1706.03762"))
+
+		delay.assert_not_called()
