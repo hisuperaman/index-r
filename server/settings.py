@@ -221,3 +221,9 @@ os.environ.setdefault('PYDANTIC_AI_NO_BANNER', '1')
 
 # Cohere Rerank, the cross-encoder that reranks retrieved passages
 COHERE_API_KEY = env('COHERE_API_KEY', default=None)
+
+# Discovery runs when fewer chunks than this match the question, or the best reranked passage scores below the minimum
+DISCOVERY_MIN_CANDIDATES = 5
+DISCOVERY_MIN_SCORE = 0.60
+# A discovered paper is ingested only if Cohere scores its title and abstract at least this
+DISCOVERY_ABSTRACT_MIN_SCORE = 0.25

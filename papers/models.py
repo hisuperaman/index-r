@@ -177,6 +177,16 @@ class Chunk(BaseModel):
 		]
 
 	def __str__(self):
+		return f"Chunk {self.chunk_index} ({self.pages})"
+
+	@property
+	def pages(self) -> str:
 		if self.start_page == self.end_page:
-			return f"Chunk {self.chunk_index} (p.{self.start_page})"
-		return f"Chunk {self.chunk_index} (pp.{self.start_page}–{self.end_page})"
+			return f"p.{self.start_page}"
+		return f"pp.{self.start_page}–{self.end_page}"
+
+	@property
+	def citation(self) -> str:
+		"""The chunk as `Paper title, §Section, p.X`, leaving out the section when it has no heading."""
+		section = f", §{self.heading}" if self.heading else ""
+		return f"{self.paper.title}{section}, {self.pages}"

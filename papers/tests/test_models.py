@@ -113,3 +113,23 @@ class ReplaceChunksTests(TestCase):
 		])
 
 		self.assertTrue(Chunk.objects.filter(search_vector="transformer").exists())
+
+
+class ChunkCitationTests(TestCase):
+	@classmethod
+	def setUpTestData(cls):
+		cls.paper = create_paper("1706.03762")
+
+	def chunk(self, **fields) -> Chunk:
+		return Chunk(paper=self.paper, text="Text.", chunk_index=0, **fields)
+
+	def test_cites_the_paper_section_and_page(self):
+		chunk = self.chunk(heading="3.2 Attention", start_page=4, end_page=4)
+
+		self.assertEqual(chunk.citation, "Paper 1706.03762, §3.2 Attention, p.4")
+
+	def test_cites_a_page_range(self):
+		self.assertEqual(self.chunk(heading="Results", start_page=7, end_page=8).citation, "Paper 1706.03762, §Results, pp.7–8")
+
+	def test_leaves_out_a_missing_section(self):
+		self.assertEqual(self.chunk(heading=None, start_page=1, end_page=1).citation, "Paper 1706.03762, p.1")

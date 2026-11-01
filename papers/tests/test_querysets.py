@@ -93,6 +93,12 @@ class ChunkQuerySetTests(TestCase):
 	def test_search_accepts_websearch_syntax(self):
 		self.assertEqual(list(Chunk.objects.search('"BLEU scores" -attention')), [self.no_match])
 
+	def test_search_matches_any_of_several_queries(self):
+		self.assertEqual(list(Chunk.objects.search("dropout", "BLEU")), [self.body_match, self.no_match])
+
+	def test_search_without_queries_returns_nothing(self):
+		self.assertEqual(list(Chunk.objects.search()), [])
+
 	def test_search_returns_nothing_for_stop_words_only(self):
 		self.assertEqual(list(Chunk.objects.search("the and of")), [])
 

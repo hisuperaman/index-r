@@ -8,7 +8,7 @@ from papers.models import Chunk
 
 
 class RerankService:
-	"""Orders passages by how well a Cohere cross-encoder judges they answer a question."""
+	"""Scores texts for how well a Cohere cross-encoder judges they answer a question."""
 
 	MODEL = "rerank-v3.5"
 	TOP_K = 5
@@ -16,15 +16,21 @@ class RerankService:
 	@classmethod
 	def rerank(cls, question: str, chunks: list[Chunk], top_k: int = TOP_K) -> list[tuple[Chunk, float]]:
 		"""Returns the `top_k` chunks with their 0–1 relevance score, best first."""
-		if not chunks:
+		scores = cls.score(question, [cls.format_passage(chunk) for chunk in chunks], top_k)
+		return [(chunks[index], score) for index, score in scores]
+
+	@classmethod
+	def score(cls, question: str, documents: list[str], top_k: int | None = None) -> list[tuple[int, float]]:
+		"""Returns the index and 0–1 relevance score of the `top_k` best documents (all by default), best first."""
+		if not documents:
 			return []
 
 		if not settings.COHERE_API_KEY:
 			raise ImproperlyConfigured("Set COHERE_API_KEY to rerank passages.")
 		response = cls.get_client(settings.COHERE_API_KEY).rerank(
-			model=cls.MODEL, query=question, documents=[cls.format_passage(chunk) for chunk in chunks], top_n=top_k,
+			model=cls.MODEL, query=question, documents=documents, top_n=top_k or len(documents),
 		)
-		return [(chunks[result.index], result.relevance_score) for result in response.results]
+		return [(result.index, result.relevance_score) for result in response.results]
 
 	@staticmethod
 	@cache
