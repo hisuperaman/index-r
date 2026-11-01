@@ -53,7 +53,7 @@ export const Signup = () => {
     const isBusy = registerUser.isPending;
 
     return (
-        <Card className="mx-auto w-full max-w-md">
+        <Card className="mx-auto w-full max-w-md bg-background">
             <CardHeader className="text-center">
                 <CardTitle className="text-2xl">Create your account</CardTitle>
                 <CardDescription>Start tracking your research in under two minutes.</CardDescription>
