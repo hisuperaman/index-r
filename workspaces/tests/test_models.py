@@ -4,9 +4,9 @@ from django.db.models import ProtectedError
 from django.test import TestCase
 
 from enums.Paper import PaperSource
-from papers.models import Paper
 from enums.Workspace import MessageRole
-from workspaces.models import Message, TrackedTopic, Workspace, WorkspacePaper
+from papers.models import Chunk, Paper
+from workspaces.models import Message, MessageCitation, TrackedTopic, Workspace, WorkspacePaper
 
 
 class WorkspacePaperTests(TestCase):
@@ -93,3 +93,51 @@ class MessageTests(TestCase):
 	def test_role_must_be_user_or_assistant(self):
 		with self.assertRaises(IntegrityError):
 			Message.objects.create(workspace=self.workspace, role="system", content="Hello")
+
+
+class MessageCitationTests(TestCase):
+	@classmethod
+	def setUpTestData(cls):
+		user = get_user_model().objects.create_user(email="owner@example.com", password="password")
+		workspace = Workspace.objects.create(user=user, name="Retrieval")
+		cls.message = Message.objects.create(workspace=workspace, role=MessageRole.ASSISTANT, content="Answer [1].")
+		cls.paper = Paper.objects.create(
+			source=PaperSource.ARXIV, external_id="1706.03762", title="Attention Is All You Need",
+			url="https://arxiv.org/abs/1706.03762",
+		)
+		cls.chunk = Chunk.objects.create(paper=cls.paper, text="Attention.", start_page=1, end_page=1, chunk_index=0)
+		cls.other_chunk = Chunk.objects.create(paper=cls.paper, text="Dropout.", start_page=2, end_page=2, chunk_index=1)
+
+	def test_message_lists_the_chunks_it_cites(self):
+		MessageCitation.objects.create(message=self.message, chunk=self.chunk, number=1)
+
+		self.assertQuerySetEqual(self.message.cited_chunks.all(), [self.chunk])
+
+	def test_a_number_is_used_once_per_message(self):
+		MessageCitation.objects.create(message=self.message, chunk=self.chunk, number=1)
+
+		with self.assertRaises(IntegrityError):
+			MessageCitation.objects.create(message=self.message, chunk=self.other_chunk, number=1)
+
+	def test_a_chunk_is_cited_once_per_message(self):
+		MessageCitation.objects.create(message=self.message, chunk=self.chunk, number=1)
+
+		with self.assertRaises(IntegrityError):
+			MessageCitation.objects.create(message=self.message, chunk=self.chunk, number=2)
+
+	def test_numbers_start_at_one(self):
+		with self.assertRaises(IntegrityError):
+			MessageCitation.objects.create(message=self.message, chunk=self.chunk, number=0)
+
+	def test_a_cited_chunk_cannot_be_deleted(self):
+		MessageCitation.objects.create(message=self.message, chunk=self.chunk, number=1)
+
+		with self.assertRaises(ProtectedError):
+			self.chunk.delete()
+
+	def test_deleting_the_message_removes_its_citations(self):
+		MessageCitation.objects.create(message=self.message, chunk=self.chunk, number=1)
+
+		self.message.delete()
+
+		self.assertFalse(MessageCitation.objects.exists())

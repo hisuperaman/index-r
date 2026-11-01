@@ -1,10 +1,11 @@
 from django.conf import settings
 from django.db.models import (
-	CASCADE, PROTECT, CharField, CheckConstraint, ForeignKey, ManyToManyField, Q, TextField, UniqueConstraint,
+	CASCADE, PROTECT, CharField, CheckConstraint, ForeignKey, ManyToManyField, PositiveIntegerField, Q, TextField,
+	UniqueConstraint,
 )
 
 from enums.Workspace import MessageRole
-from papers.models import Paper
+from papers.models import Chunk, Paper
 from server.models import BaseModel, PrimaryModel
 
 
@@ -55,6 +56,7 @@ class Message(PrimaryModel):
 		choices=MessageRole,
 	)
 	content = TextField()
+	cited_chunks = ManyToManyField(Chunk, through="MessageCitation", related_name="citing_messages")
 
 	class Meta:
 		constraints = [
@@ -64,6 +66,24 @@ class Message(PrimaryModel):
 
 	def __str__(self):
 		return f"{self.role} message in {self.workspace.name}"
+
+
+class MessageCitation(BaseModel):
+	"""A chunk an assistant message cites as [number]."""
+	message = ForeignKey(Message, on_delete=CASCADE, related_name="citations")
+	chunk = ForeignKey(Chunk, on_delete=PROTECT, related_name="message_citations")
+	number = PositiveIntegerField()
+
+	class Meta:
+		ordering = ["number"]
+		constraints = [
+			UniqueConstraint(fields=["message", "number"], name="unique_message_citation_number"),
+			UniqueConstraint(fields=["message", "chunk"], name="unique_message_citation_chunk"),
+			CheckConstraint(condition=Q(number__gte=1), name="message_citation_number_positive"),
+		]
+
+	def __str__(self):
+		return f"[{self.number}] in message {self.message_id}"
 
 
 class TrackedTopic(PrimaryModel):

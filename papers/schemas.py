@@ -9,4 +9,6 @@ class SearchQueries(BaseModel):
 class GroundedAnswer(BaseModel):
 	"""An answer the LLM wrote from numbered passages."""
 	content: str = Field(description="The answer, citing passages inline as [n] with the passage numbers given")
-	is_insufficient_context: bool = Field(description="True only if the passages do not contain enough to answer")
+	is_insufficient_context: bool = Field(
+		default=False, description="True only if the passages do not contain enough to answer",
+	)

@@ -227,3 +227,5 @@ DISCOVERY_MIN_CANDIDATES = 5
 DISCOVERY_MIN_SCORE = 0.60
 # A discovered paper is ingested only if Cohere scores its title and abstract at least this
 DISCOVERY_ABSTRACT_MIN_SCORE = 0.25
+# How long an ask waits for newly discovered papers to be ingested before answering without them
+INGESTION_WAIT_SECONDS = 60

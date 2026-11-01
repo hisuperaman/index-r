@@ -5,9 +5,7 @@ from tempfile import NamedTemporaryFile
 
 import requests
 
-
-class PdfDownloadError(Exception):
-	"""The PDF could not be downloaded, or what was downloaded is not a PDF."""
+from papers.exceptions import PdfDownloadError
 
 
 class PdfDownloadService:

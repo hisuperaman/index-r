@@ -3,7 +3,8 @@ from unittest.mock import MagicMock, patch
 import requests
 from django.test import SimpleTestCase
 
-from papers.services import PdfDownloadError, PdfDownloadService
+from papers.exceptions import PdfDownloadError
+from papers.services import PdfDownloadService
 
 PDF_URL = "https://arxiv.org/pdf/1706.03762"
 
