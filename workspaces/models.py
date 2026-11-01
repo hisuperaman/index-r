@@ -1,12 +1,14 @@
 from django.conf import settings
+from django.db.models import Count, Exists, IntegerField, OuterRef, Subquery
 from django.db.models import (
-	CASCADE, PROTECT, CharField, CheckConstraint, ForeignKey, ManyToManyField, PositiveIntegerField, Q, TextField,
+	CASCADE, PROTECT, BooleanField, CharField, CheckConstraint, ForeignKey, ManyToManyField, PositiveIntegerField, Q, TextField,
 	UniqueConstraint,
 )
 
 from enums.Workspace import MessageRole
 from papers.models import Chunk, Paper
 from server.models import BaseModel, PrimaryModel
+from workspaces.querysets import LAST_QUESTION_LENGTH, WorkspaceQuerySet
 
 
 class Workspace(PrimaryModel):
@@ -16,11 +18,14 @@ class Workspace(PrimaryModel):
 		related_name="workspaces",
 	)
 	name = CharField(max_length=255)
+	papers_only = BooleanField(default=False)
 	papers = ManyToManyField(
 		Paper,
 		through="WorkspacePaper",
 		related_name="workspaces",
 	)
+
+	objects = WorkspaceQuerySet.as_manager()
 
 	class Meta:
 		constraints = [
@@ -29,6 +34,43 @@ class Workspace(PrimaryModel):
 
 	def __str__(self):
 		return self.name
+
+	def mentioned_papers(self):
+		"""Papers this workspace's answers cite, annotated with how often and when last, and whether they're in it."""
+		citations = MessageCitation.objects.filter(chunk__paper=OuterRef("pk"), message__workspace=self).order_by()
+		return Paper.objects.with_authors().filter(Exists(citations)).annotate(
+			_mention_count=Subquery(
+				citations.values("chunk__paper").annotate(count=Count("pk")).values("count"), output_field=IntegerField(),
+			),
+			_last_mentioned_at=Subquery(citations.order_by("-message__created_at").values("message__created_at")[:1]),
+			_in_workspace=Exists(WorkspacePaper.objects.filter(workspace=self, paper=OuterRef("pk"))),
+		)
+
+	@property
+	def paper_count(self) -> int:
+		if hasattr(self, "_paper_count"):
+			return self._paper_count
+		return self.workspace_papers.count()
+
+	@property
+	def question_count(self) -> int:
+		if hasattr(self, "_question_count"):
+			return self._question_count
+		return self.messages.filter(role=MessageRole.USER).count()
+
+	@property
+	def last_question(self) -> str | None:
+		if hasattr(self, "_last_question"):
+			return self._last_question
+		question = self.messages.filter(role=MessageRole.USER).order_by("-created_at").first()
+		return question.content[:LAST_QUESTION_LENGTH] if question else None
+
+	@property
+	def last_activity_at(self):
+		if hasattr(self, "_last_activity_at"):
+			return self._last_activity_at
+		message = self.messages.order_by("-created_at").first()
+		return message.created_at if message else self.created_at
 
 
 class WorkspacePaper(BaseModel):

@@ -1,9 +1,10 @@
 from datetime import date
+from unittest.mock import MagicMock, patch
 
 from django.test import SimpleTestCase
 
 from enums.Paper import DatePrecision
-from papers.services.fetchers import BaseFetcherService
+from papers.services.fetchers import BaseFetcherService, SemanticScholarFetcherService
 
 
 class BaseFetcherServiceTests(SimpleTestCase):
@@ -19,3 +20,22 @@ class BaseFetcherServiceTests(SimpleTestCase):
 		for value in (None, "", "June 2017", "2017-13-40"):
 			with self.subTest(value=value):
 				self.assertEqual(BaseFetcherService.parse_date(value), (None, None))
+
+
+def response(status: int) -> MagicMock:
+	mock = MagicMock(status_code=status)
+	mock.json.return_value = {"data": []}
+	return mock
+
+
+class RateLimitRetryTests(SimpleTestCase):
+
+	def test_retries_once_after_being_rate_limited(self):
+		with (
+			patch("papers.services.fetchers.BaseFetcherService.requests.get", side_effect=[response(429), response(200)]) as get,
+			patch("papers.services.fetchers.BaseFetcherService.time.sleep") as sleep,
+		):
+			SemanticScholarFetcherService.search("attention", 3)
+
+		self.assertEqual(get.call_count, 2)
+		sleep.assert_called_once_with(SemanticScholarFetcherService.RATE_LIMIT_WAIT_SECONDS)

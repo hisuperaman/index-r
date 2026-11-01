@@ -1,5 +1,7 @@
+import time
 from abc import ABC, abstractmethod
 from datetime import date
+from http import HTTPStatus
 from typing import Any
 
 import requests
@@ -14,14 +16,23 @@ class BaseFetcherService(ABC):
 	source: PaperSource
 	BASE_URL: str
 	TIMEOUT_SECONDS = 10
+	RATE_LIMIT_WAIT_SECONDS = 1.5
 	MAX_LIMIT: int
 
 	@classmethod
 	def get(cls, params: dict[str, Any]) -> requests.Response:
-		"""Sends a GET to the provider's API and raises on an error status."""
-		response = requests.get(cls.BASE_URL, params=params, timeout=cls.TIMEOUT_SECONDS)
+		"""Sends a GET to the provider's API, retrying once if rate-limited, and raises on an error status."""
+		response = requests.get(cls.BASE_URL, params=params, headers=cls.headers(), timeout=cls.TIMEOUT_SECONDS)
+		if response.status_code == HTTPStatus.TOO_MANY_REQUESTS:
+			time.sleep(cls.RATE_LIMIT_WAIT_SECONDS)
+			response = requests.get(cls.BASE_URL, params=params, headers=cls.headers(), timeout=cls.TIMEOUT_SECONDS)
 		response.raise_for_status()
 		return response
+
+	@classmethod
+	def headers(cls) -> dict[str, str]:
+		"""Extra request headers, such as an API key."""
+		return {}
 
 	@classmethod
 	@abstractmethod

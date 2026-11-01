@@ -185,7 +185,7 @@ shows weak precision, the upgrade path is a true-BM25 PostgreSQL extension, whic
 |---|---|---|
 | `User` | `iam` | Email-based account (no username) |
 | `Workspace` | `workspaces` | A user's topic-scoped space; owns its chat and its paper list |
-| `WorkspacePaper` | `workspaces` | Which papers from the shared corpus are mentioned in a workspace (unique per workspace; a paper in use cannot be deleted) |
+| `WorkspacePaper` | `workspaces` | The papers a workspace uses: cited papers are added automatically, and the user can add or remove papers (unique per workspace; a paper in use cannot be deleted). With `Workspace.papers_only` on, answers use only these. All papers ever cited are derived from `MessageCitation` |
 | `Message` | `workspaces` | A chat message in a workspace (`user` or `assistant`) |
 | `MessageCitation` | `workspaces` | A chunk an assistant message cites as `[n]` |
 | `Paper` | `papers` | A paper in the shared corpus: source, external ID, DOI, title, abstract, venue, citation count, publication date and precision, URLs, and when ingestion completed or failed (status is derived) |
@@ -220,7 +220,8 @@ organisations).
 | Discovery (`DiscoveryService`: expanded queries → all sources → dedupe → abstract filter with Cohere → store and queue ingestion) | `papers/services/` | Done |
 | Corpus check before discovery (`RetrievalService`: multi-query search → rerank → two-gate `needs_discovery`, thresholds in settings) | `papers/services/` | Done |
 | Grounded answers (`AnswerService`: numbered passages → LLM → `[n]` markers mapped to chunks, `Chunk.citation` labels) | `papers/services/` | Done |
-| Ask: `POST /api/workspaces/<id>/messages/` (JSON) and `…/messages/stream/` (server-sent events) run expand → search → discover and wait for ingestion if needed → rerank → answer, saving the assistant message with its `MessageCitation`s and adding cited papers to the workspace (`AskService`) | `workspaces/` | Done |
+| Ask: `POST /api/workspaces/<id>/messages/` (JSON) and `…/messages/stream/` (server-sent events) run expand → search → discover and wait for ingestion if needed → rerank → answer, saving the assistant message with its `MessageCitation`s (`AskService`) | `workspaces/` | Done |
+| Workspace UI: workspaces list (search, grouped by activity), chat with streamed cited answers, papers panel (user's papers with the "answer only from these papers" switch, and papers mentioned by answers via `GET /api/workspaces/<id>/mentioned-papers/`), settings | `webapp/` | Done |
 | Admin panel, MCP, live tracking | — | Planned |
 
 The service classes are independent of the HTTP layer, so the API, background jobs and the MCP server can all call the

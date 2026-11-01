@@ -22,6 +22,7 @@ interface Google {
                 client_id: string;
                 scope: string;
                 callback: (res: GoogleApiCodeResponse) => void;
+                error_callback?: (error: { type: string }) => void;
             }) => CodeClient;
             CodeClient: CodeClient;
             GoogleIdentityServicesErrorType: {
@@ -37,32 +38,53 @@ interface Google {
 
 declare const window: {
     gapi: unknown;
-    google: Google;
+    google?: Google;
 };
+
+/** Whether Google's sign-in script has loaded. */
+export const isGoogleLoaded = (): boolean => !!window.google?.accounts?.id;
+
+/** Asks the user to pick a Google account and resolves with the one-time code to send to the server. */
+export const requestGoogleCode = (): Promise<string> => new Promise((resolve, reject) => {
+    if (!window.google) {
+        reject(new Error("Google sign-in isn't available right now. Please try again later."));
+        return;
+    }
+    window.google.accounts.oauth2.initCodeClient({
+        client_id: import.meta.env.VITE_APP_GOOGLE_CLIENT_ID,
+        scope: 'openid profile email',
+        callback: (response) => response.code
+            ? resolve(response.code)
+            : reject(new Error("Google didn't confirm the account. Please try again.")),
+        error_callback: () => reject(new Error("The Google window was closed before connecting.")),
+    }).requestCode();
+});
 
 interface GoogleApiIdResponse {
     credential: string;
 }
 
 interface GoogleApiCodeResponse {
-    code: string;
+    code?: string;
+    error?: string;
 }
 
 export class GoogleUser {
-    codeClient: typeof window.google.accounts.oauth2.CodeClient | undefined;
+    codeClient: CodeClient | undefined;
 
-    prompt = window.google.accounts.id.prompt;
     private readonly showNonFieldError: (message: string) => void;
 
     constructor(showNonFieldError: (message: string) => void) {
         this.showNonFieldError = showNonFieldError;
 
-        window.google.accounts.id.initialize({
+        const google = window.google!;
+
+        google.accounts.id.initialize({
             client_id: import.meta.env.VITE_APP_GOOGLE_CLIENT_ID,
             callback: this.onIdAuthSuccess,
         });
 
-        this.codeClient = window.google.accounts.oauth2.initCodeClient({
+        this.codeClient = google.accounts.oauth2.initCodeClient({
             client_id: import.meta.env.VITE_APP_GOOGLE_CLIENT_ID,
             scope: 'openid profile email',
             callback: this.onCodeAuthSuccess,
@@ -78,6 +100,7 @@ export class GoogleUser {
             })
 
     onCodeAuthSuccess = (response: GoogleApiCodeResponse) => {
+        if (!response.code) return;
         IAM.googleCodeLogin(response.code).then((token) => onLoginSuccess(token))
             .catch((err: AxiosError) => {
                 if (err.response?.status === 400 && err.message.includes("already registered")) {
@@ -85,6 +108,8 @@ export class GoogleUser {
                 }
             })
     }
+
+    prompt = () => window.google?.accounts.id.prompt();
 
     login = () => {
         this.codeClient?.requestCode();

@@ -1,3 +1,4 @@
+from datetime import date
 from unittest.mock import patch
 
 from django.db import connection
@@ -6,11 +7,9 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from datetime import date
-
 from enums.Paper import DatePrecision, PaperSource
 from iam.models import User
-from papers.models import Chunk, Paper
+from papers.models import Author, Chunk, Paper, PaperAuthor
 from papers.views import ChunkSearchView
 
 URL = reverse("chunk-search")
@@ -49,6 +48,7 @@ class ChunkSearchViewTests(APITestCase):
 		)
 		self.assertEqual(result["paper"]["id"], str(self.paper.id))
 		self.assertEqual(result["citation"], "Attention Is All You Need, §Attention, pp.1–2")
+		self.assertNotIn("authors", result["paper"])
 		self.assertEqual(result["paper"]["title"], "Attention Is All You Need")
 		self.assertGreater(result["rank"], 0)
 
@@ -139,3 +139,62 @@ class ChunkSearchViewTests(APITestCase):
 
 		self.assertEqual(len(response.data), 5)
 		self.assertEqual(len(five), len(one))
+
+
+
+class PaperViewSetTests(APITestCase):
+	@classmethod
+	def setUpTestData(cls):
+		cls.user = User.objects.create_user(email="ada@example.com", password="password")
+		cls.attention = cls.create_paper("1706.03762", "Attention Is All You Need", doi="10.48550/arxiv.1706.03762")
+		cls.bert = cls.create_paper("1810.04805", "BERT: Pre-training of Deep Bidirectional Transformers")
+
+	@staticmethod
+	def create_paper(external_id: str, title: str, doi: str | None = None, authors: tuple[str, ...] = ()) -> Paper:
+		paper = Paper.objects.create(
+			source=PaperSource.ARXIV, external_id=external_id, title=title, doi=doi,
+			url=f"https://arxiv.org/abs/{external_id}",
+		)
+		for order, name in enumerate(authors, start=1):
+			PaperAuthor.objects.create(paper=paper, author=Author.objects.create(name=name), order=order)
+		return paper
+
+	def setUp(self):
+		self.client.force_authenticate(self.user)
+
+	def list(self, **params):
+		return self.client.get(reverse("paper-list"), params)
+
+	def test_lists_the_corpus_newest_first(self):
+		self.assertEqual([row["id"] for row in self.list().data["results"]], [str(self.bert.id), str(self.attention.id)])
+
+	def test_searches_titles_and_dois(self):
+		self.assertEqual([row["id"] for row in self.list(search="bidirectional").data["results"]], [str(self.bert.id)])
+		self.assertEqual([row["id"] for row in self.list(search="1706.03762").data["results"]], [str(self.attention.id)])
+
+	def test_lists_authors_in_byline_order(self):
+		paper = self.create_paper("2005.14165", "Language Models are Few-Shot Learners", authors=("Tom Brown", "Ben Mann"))
+
+		response = self.client.get(reverse("paper-detail", args=[paper.pk]))
+
+		self.assertEqual(response.data["authors"], ["Tom Brown", "Ben Mann"])
+
+	def test_query_count_does_not_grow_with_papers_or_authors(self):
+		with CaptureQueriesContext(connection) as two:
+			self.list()
+
+		for index in range(3):
+			self.create_paper(str(index), f"Paper {index}", authors=("A", "B"))
+		with CaptureQueriesContext(connection) as five:
+			response = self.list()
+
+		self.assertEqual(len(response.data["results"]), 5)
+		self.assertEqual(len(five), len(two))
+
+	def test_a_malformed_id_is_a_404(self):
+		self.assertEqual(self.client.get("/api/papers/not-a-uuid/").status_code, status.HTTP_404_NOT_FOUND)
+
+	def test_requires_login(self):
+		self.client.force_authenticate(None)
+
+		self.assertEqual(self.list().status_code, status.HTTP_401_UNAUTHORIZED)

@@ -7,7 +7,7 @@ from django.db import transaction
 
 from enums.Paper import IngestionStatus
 from enums.Workspace import AskStage, MessageRole
-from papers.models import Paper
+from papers.models import Chunk, Paper
 from papers.services import AnswerService, DiscoveryService, QueryExpansionService, RetrievalService
 from papers.services.AnswerService import Answer
 from workspaces.models import Message, MessageCitation, Workspace, WorkspacePaper
@@ -47,25 +47,28 @@ class AskService:
 		yield AskStatus(AskStage.EXPANDING)
 		queries = QueryExpansionService.expand(text)
 
-		yield AskStatus(AskStage.SEARCHING)
-		retrieval = RetrievalService.retrieve(text, queries)
+		workspace = question.workspace
+		chunks = Chunk.objects.filter(paper__workspaces=workspace) if workspace.papers_only else None
 
-		if retrieval.needs_discovery:
+		yield AskStatus(AskStage.SEARCHING)
+		retrieval = RetrievalService.retrieve(text, queries, chunks)
+
+		if retrieval.needs_discovery and not workspace.papers_only:
 			yield AskStatus(AskStage.DISCOVERING)
 			papers = DiscoveryService.discover(text, queries)
-			pending = [paper.pk for paper in papers if paper.ingestion_status == IngestionStatus.PENDING]
+			pending = [paper.pk for paper in papers if paper.pdf_url and paper.ingestion_status == IngestionStatus.PENDING]
 			if pending:
 				yield AskStatus(AskStage.INGESTING)
 				cls.wait_for_ingestion(pending)
 				yield AskStatus(AskStage.SEARCHING)
-				retrieval = RetrievalService.retrieve(text, queries)
+				retrieval = RetrievalService.retrieve(text, queries, chunks)
 
 		yield AskStatus(AskStage.ANSWERING)
 		answer = None
 		for answer in AnswerService.stream(text, [chunk for chunk, _ in retrieval.passages]):
 			yield AskDelta(answer.content)
 
-		yield AskDone(cls.save_answer(question.workspace, answer))
+		yield AskDone(cls.save_answer(workspace, answer))
 
 	@classmethod
 	def wait_for_ingestion(cls, paper_ids: list) -> None:

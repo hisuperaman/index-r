@@ -172,6 +172,9 @@ REST_AUTH = {
 	"JWT_AUTH_HTTPONLY": False,
 	"TOKEN_MODEL": None,
 	"SESSION_LOGIN": False,
+	"USER_DETAILS_SERIALIZER": "iam.serializers.UserSerializer",
+	"OLD_PASSWORD_FIELD_ENABLED": True,
+	"PASSWORD_CHANGE_SERIALIZER": "iam.serializers.PasswordChangeSerializer",
 }
 
 SIMPLE_JWT = {
@@ -222,10 +225,15 @@ os.environ.setdefault('PYDANTIC_AI_NO_BANNER', '1')
 # Cohere Rerank, the cross-encoder that reranks retrieved passages
 COHERE_API_KEY = env('COHERE_API_KEY', default=None)
 
+# Optional; without a key Semantic Scholar rate-limits searches heavily
+SEMANTIC_SCHOLAR_API_KEY = env('SEMANTIC_SCHOLAR_API_KEY', default=None)
+
 # Discovery runs when fewer chunks than this match the question, or the best reranked passage scores below the minimum
 DISCOVERY_MIN_CANDIDATES = 5
-DISCOVERY_MIN_SCORE = 0.60
+DISCOVERY_MIN_SCORE = 0.30
 # A discovered paper is ingested only if Cohere scores its title and abstract at least this
 DISCOVERY_ABSTRACT_MIN_SCORE = 0.25
+# At most this many discovered papers are stored and read per question
+DISCOVERY_MAX_PAPERS = 10
 # How long an ask waits for newly discovered papers to be ingested before answering without them
 INGESTION_WAIT_SECONDS = 60

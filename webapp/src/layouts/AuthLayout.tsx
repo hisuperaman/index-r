@@ -57,7 +57,7 @@ export const AuthLayout = () => {
                             <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl lg:text-5xl lg:leading-[1.1]">
                                 Find the right paper.
                                 <br className="hidden sm:inline"/>
-                                Never miss the <span className="text-muted-foreground">next</span> one.
+                                Never miss the <span className="text-primary">next</span> one.
                             </h1>
 
                             <p className="text-base leading-relaxed text-muted-foreground sm:text-lg">

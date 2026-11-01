@@ -3,7 +3,7 @@ from math import log
 from operator import or_
 
 from django.contrib.postgres.search import SearchQuery, SearchRank
-from django.db.models import Case, F, FloatField, Q, QuerySet, Value, When
+from django.db.models import Case, F, FloatField, Prefetch, Q, QuerySet, Value, When
 from django.db.models.functions import Cast, Coalesce, ExtractYear, Ln
 from django.db.models.lookups import LessThanOrEqual
 from django.utils import timezone
@@ -26,6 +26,12 @@ class PaperQuerySet(QuerySet):
 		if doi:
 			match |= Q(doi=doi)
 		return self.filter(match)
+
+	def with_authors(self):
+		"""Papers with their authors loaded in byline order."""
+		from papers.models import PaperAuthor
+
+		return self.prefetch_related(Prefetch("paper_authors", queryset=PaperAuthor.objects.select_related("author")))
 
 	def pending(self):
 		"""Papers whose ingestion has neither completed nor failed."""

@@ -115,6 +115,11 @@ class Paper(PrimaryModel):
 		)
 
 	@property
+	def author_names(self) -> list[str]:
+		"""The authors' names in byline order."""
+		return [paper_author.author.name for paper_author in self.paper_authors.all()]
+
+	@property
 	def ingestion_status(self) -> IngestionStatus:
 		if self.ingested_at:
 			return IngestionStatus.COMPLETED

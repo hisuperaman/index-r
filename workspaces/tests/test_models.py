@@ -1,7 +1,10 @@
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError
 from django.db.models import ProtectedError
+from datetime import timedelta
+
 from django.test import TestCase
+from django.utils import timezone
 
 from enums.Paper import PaperSource
 from enums.Workspace import MessageRole
@@ -141,3 +144,59 @@ class MessageCitationTests(TestCase):
 		self.message.delete()
 
 		self.assertFalse(MessageCitation.objects.exists())
+
+
+class MentionedPapersTests(TestCase):
+	@classmethod
+	def setUpTestData(cls):
+		user = get_user_model().objects.create_user(email="owner@example.com", password="password")
+		cls.workspace = Workspace.objects.create(user=user, name="Retrieval")
+		cls.other_workspace = Workspace.objects.create(user=user, name="Other")
+
+		def paper(external_id: str) -> Paper:
+			return Paper.objects.create(
+				source=PaperSource.ARXIV, external_id=external_id, title=f"Paper {external_id}",
+				url=f"https://arxiv.org/abs/{external_id}",
+			)
+
+		cls.attention, cls.bert, cls.uncited = paper("1"), paper("2"), paper("3")
+		cls.attention_chunks = [
+			Chunk.objects.create(paper=cls.attention, text=f"Text {index}.", start_page=1, end_page=1, chunk_index=index)
+			for index in range(2)
+		]
+		cls.bert_chunk = Chunk.objects.create(paper=cls.bert, text="BERT.", start_page=1, end_page=1, chunk_index=0)
+
+	def cite(self, workspace: Workspace, *chunks: Chunk, days_ago: int = 0) -> Message:
+		message = Message.objects.create(workspace=workspace, role=MessageRole.ASSISTANT, content="Answer.")
+		Message.objects.filter(pk=message.pk).update(created_at=timezone.now() - timedelta(days=days_ago))
+		for number, chunk in enumerate(chunks, start=1):
+			MessageCitation.objects.create(message=message, chunk=chunk, number=number)
+		return message
+
+	def test_lists_each_cited_paper_once(self):
+		self.cite(self.workspace, *self.attention_chunks)
+		self.cite(self.workspace, self.attention_chunks[0], self.bert_chunk)
+
+		self.assertQuerySetEqual(self.workspace.mentioned_papers(), [self.attention, self.bert], ordered=False)
+
+	def test_counts_citations_and_keeps_the_latest(self):
+		self.cite(self.workspace, *self.attention_chunks, days_ago=3)
+		latest = self.cite(self.workspace, self.attention_chunks[0], days_ago=1)
+		latest.refresh_from_db()
+
+		paper = self.workspace.mentioned_papers().get()
+
+		self.assertEqual((paper._mention_count, paper._last_mentioned_at), (3, latest.created_at))
+
+	def test_ignores_citations_in_other_workspaces(self):
+		self.cite(self.other_workspace, self.bert_chunk)
+
+		self.assertQuerySetEqual(self.workspace.mentioned_papers(), [])
+
+	def test_flags_papers_already_in_the_workspace(self):
+		self.cite(self.workspace, self.attention_chunks[0], self.bert_chunk)
+		WorkspacePaper.objects.create(workspace=self.workspace, paper=self.bert)
+
+		flags = dict(self.workspace.mentioned_papers().values_list("title", "_in_workspace"))
+
+		self.assertEqual(flags, {"Paper 1": False, "Paper 2": True})

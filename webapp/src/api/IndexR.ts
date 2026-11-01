@@ -9,7 +9,7 @@ const REFRESH_URL = "/api/iam/auth/token/refresh/";
 
 let pendingRefresh: Promise<string> | null = null;
 
-const refreshAccessToken = (): Promise<string> => {
+export const refreshAccessToken = (): Promise<string> => {
 	pendingRefresh ??= axios.post<AuthTokens>(REFRESH_URL, {refresh: getRefreshToken()})
 		.then(({data}) => {
 			saveAuthTokens(data);

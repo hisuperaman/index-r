@@ -104,12 +104,27 @@ class TextExtractorServiceTests(SimpleTestCase):
 		self.assertEqual(
 			[(chunk.heading, chunk.text) for chunk in chunks],
 			[
-				("A Study of Things", "Ada Lovelace<sup>1</sup> , Alan Turing<sup>2</sup> , and Grace Hopper<sup>1</sup>"
-									  "\n\nAbstract. We study things.\n\nhttps://doi.org/10.1234/abc.567."),
+				(None, "Ada Lovelace<sup>1</sup> , Alan Turing<sup>2</sup> , and Grace Hopper<sup>1</sup>"
+					   "\n\nAbstract. We study things.\n\nhttps://doi.org/10.1234/abc.567."),
 				("1 Introduction", "Intro body.\n\nIntro continues."),
 				("2.1 Sub", "Methods body."),
 			],
 		)
+
+	def test_strips_html_tags_from_headings(self):
+		pages = [page(1, "# Title\n\n## 2 Results<sup>*</sup>\n\nBody.\n")]
+
+		self.assertEqual([chunk.heading for chunk in self.extract(pages).chunks], ["2 Results"])
+
+	def test_a_byline_heading_is_not_a_section(self):
+		pages = [page(1, "# Title\n\n## Ada Lovelace<sup>†</sup> , Alan Turing<sup>†</sup>\n\nIntro body.\n")]
+
+		self.assertEqual([chunk.heading for chunk in self.extract(pages).chunks], [None])
+
+	def test_the_title_is_not_a_section(self):
+		pages = [page(1, "# Ragas: Automated Evaluation\n\nBody.\n\n## RAGAS: Automated Evaluation\n\nMore.\n")]
+
+		self.assertEqual([chunk.heading for chunk in self.extract(pages).chunks], [None, None])
 
 	def test_numbers_chunks_in_order(self):
 		self.assertEqual([chunk.chunk_index for chunk in self.extract(PAPER_PAGES).chunks], [0, 1, 2])
@@ -173,7 +188,7 @@ class TextExtractorServiceTests(SimpleTestCase):
 		self.assertEqual(
 			[(chunk.heading, chunk.text, chunk.start_page) for chunk in paper.chunks],
 			[
-				("A Study of Things", "Ada Lovelace, Alan Turing", 1),
+				(None, "Ada Lovelace, Alan Turing", 1),
 				("1 Introduction", "Intro body.", 1),
 				("2 Methods", "Methods body.", 2),
 			],

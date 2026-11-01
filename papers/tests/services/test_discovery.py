@@ -51,6 +51,15 @@ class DiscoveryFilterRelevantTests(TestCase):
 			"Tomato Gardening\nGrowing tomatoes.",
 		])
 
+	def test_keeps_at_most_the_best_few(self):
+		with (
+			self.settings(DISCOVERY_ABSTRACT_MIN_SCORE=0.1, DISCOVERY_MAX_PAPERS=2),
+			patch.object(RerankService, "score", return_value=[(2, 0.9), (0, 0.8), (1, 0.7)]),
+		):
+			papers = DiscoveryService.filter_relevant(QUESTION, [ATTENTION, BERT, GARDENING])
+
+		self.assertEqual(papers, [GARDENING, ATTENTION])
+
 	def test_judges_a_paper_without_an_abstract_on_its_title(self):
 		with patch.object(RerankService, "score", return_value=[]) as score:
 			DiscoveryService.filter_relevant(QUESTION, [fetched("1", "Attention")])
