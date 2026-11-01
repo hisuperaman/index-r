@@ -7,8 +7,8 @@ class MessageRole(TextChoices):
 
 
 class AskStage(TextChoices):
-	EXPANDING = 'expanding', 'Expanding the question'
-	SEARCHING = 'searching', 'Searching the corpus'
-	DISCOVERING = 'discovering', 'Discovering new papers'
-	INGESTING = 'ingesting', 'Indexing new papers'
+	EXPANDING = 'expanding', 'Understanding your question'
+	SEARCHING = 'searching', 'Looking through papers'
+	DISCOVERING = 'discovering', 'Finding new papers'
+	INGESTING = 'ingesting', 'Reading new papers'
 	ANSWERING = 'answering', 'Writing the answer'

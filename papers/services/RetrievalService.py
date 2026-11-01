@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from django.conf import settings
+from django.db.models import QuerySet
 
 from papers.models import Chunk
 from papers.services.RerankService import RerankService
@@ -27,8 +28,12 @@ class RetrievalService:
 	RERANK_CANDIDATES = 20
 
 	@classmethod
-	def retrieve(cls, question: str, queries: list[str], top_k: int = RerankService.TOP_K) -> Retrieval:
-		"""Searches the chunks with `queries`, reranks the best against `question` and keeps the `top_k`."""
-		candidates = list(Chunk.objects.search(*queries).select_related(Chunk.fields.paper)[:cls.CANDIDATES])
+	def retrieve(
+			cls, question: str, queries: list[str], chunks: QuerySet[Chunk] | None = None,
+			top_k: int = RerankService.TOP_K,
+	) -> Retrieval:
+		"""Searches `chunks` (all by default) with `queries`, reranks the best against `question` and keeps the `top_k`."""
+		chunks = Chunk.objects.all() if chunks is None else chunks
+		candidates = list(chunks.search(*queries).select_related(Chunk.fields.paper)[:cls.CANDIDATES])
 		passages = RerankService.rerank(question, candidates[:cls.RERANK_CANDIDATES], top_k)
 		return Retrieval(passages=passages, candidate_count=len(candidates))

@@ -50,12 +50,14 @@ class TextExtractorService:
 		metadata = cls.read_metadata(pages)
 		sections = cls.group_into_sections(cls.split_into_blocks(pages))
 
+		title = cls.find_title(sections, metadata)
+
 		return ExtractedPaper(
-			title=cls.find_title(sections, metadata),
+			title=title,
 			abstract=cls.find_abstract(sections),
 			doi=cls.find_doi(pages),
 			authors=cls.find_authors(sections, metadata),
-			chunks=cls.chunk_sections(sections, max_chunk_chars),
+			chunks=cls.chunk_sections(sections, max_chunk_chars, title),
 		)
 
 	@staticmethod
@@ -114,8 +116,9 @@ class TextExtractorService:
 
 	@classmethod
 	def clean_heading(cls, heading: str) -> str:
-		"""Strips Markdown emphasis and extra whitespace from a heading."""
-		return " ".join(cls._EMPHASIS_RE.sub("", heading).split())[:cls.MAX_HEADING_CHARS]
+		"""Strips HTML tags, Markdown emphasis and extra whitespace from a heading."""
+		text = cls._EMPHASIS_RE.sub("", cls._TAG_RE.sub("", heading))
+		return " ".join(text.replace(" ,", ",").split())[:cls.MAX_HEADING_CHARS]
 
 	@classmethod
 	def is_skipped(cls, heading: str | None) -> bool:
@@ -126,7 +129,14 @@ class TextExtractorService:
 		return words in cls._SKIP_HEADINGS
 
 	@classmethod
-	def chunk_sections(cls, sections: list[Section], max_chars: int) -> list[ExtractedChunk]:
+	def chunk_heading(cls, heading: str | None, title: str) -> str | None:
+		"""The section name to cite, or None when the heading is really the paper title or its byline."""
+		if not heading or heading.casefold() == title.casefold() or cls.parse_names(heading):
+			return None
+		return heading
+
+	@classmethod
+	def chunk_sections(cls, sections: list[Section], max_chars: int, title: str = "") -> list[ExtractedChunk]:
 		"""Turns each section into one or more chunks of at most `max_chars` characters."""
 		chunks = []
 		for section in sections:
@@ -134,7 +144,7 @@ class TextExtractorService:
 				continue
 			for text, start_page, end_page in cls.split_section(section.blocks, max_chars):
 				chunks.append(ExtractedChunk(
-					heading=section.heading,
+					heading=cls.chunk_heading(section.heading, title),
 					text=text,
 					start_page=start_page,
 					end_page=end_page,

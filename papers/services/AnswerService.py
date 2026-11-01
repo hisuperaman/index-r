@@ -21,8 +21,8 @@ class AnswerService:
 	"""Writes an answer grounded only in the passages it is given."""
 
 	MARKER_RE = re.compile(r"\s?\[(\d+)]")
-	NO_PASSAGES = "No passages in the corpus answer this question yet."
-	NO_ANSWER = "I could not write an answer from the passages found."
+	NO_PASSAGES = "I couldn't find papers that answer this question yet."
+	NO_ANSWER = "I couldn't write an answer from the papers I found."
 
 	@classmethod
 	def answer(cls, question: str, chunks: list[Chunk]) -> Answer:

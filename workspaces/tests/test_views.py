@@ -10,7 +10,7 @@ from rest_framework.test import APITestCase, APITransactionTestCase
 from enums.Paper import PaperSource
 from enums.Workspace import AskStage, MessageRole
 from iam.models import User
-from papers.models import Chunk, Paper
+from papers.models import Author, Chunk, Paper, PaperAuthor
 from papers.services import Answer
 from workspaces.models import Message, MessageCitation, Workspace, WorkspacePaper
 from workspaces.services import AskDelta, AskDone, AskService, AskStatus
@@ -67,6 +67,42 @@ class WorkspaceViewSetTests(APITestCase):
 		self.assertEqual(response.status_code, status.HTTP_200_OK)
 		self.assertEqual([row["id"] for row in response.data["results"]], [str(newer.id), str(older.id)])
 
+	def test_lists_activity_with_each_workspace(self):
+		workspace = Workspace.objects.create(user=self.user, name="Retrieval")
+		WorkspacePaper.objects.create(workspace=workspace, paper=create_paper("1"))
+		Message.objects.create(workspace=workspace, role=MessageRole.USER, content="Which models beat 0.9 F1?")
+
+		[row] = self.client.get(LIST_URL).data["results"]
+
+		self.assertEqual(
+			(row["paper_count"], row["question_count"], row["last_question"]), (1, 1, "Which models beat 0.9 F1?"),
+		)
+		self.assertIsNotNone(row["last_activity_at"])
+
+	def test_lists_the_most_recently_active_first(self):
+		quiet = Workspace.objects.create(user=self.user, name="Quiet")
+		busy = Workspace.objects.create(user=self.user, name="Busy")
+		Message.objects.create(workspace=quiet, role=MessageRole.USER, content="New question")
+
+		response = self.client.get(LIST_URL)
+
+		self.assertEqual([row["id"] for row in response.data["results"]], [str(quiet.id), str(busy.id)])
+
+	def test_searches_by_name(self):
+		Workspace.objects.create(user=self.user, name="Sparse retrieval")
+		Workspace.objects.create(user=self.user, name="Protein folding")
+
+		response = self.client.get(LIST_URL, {"search": "retriev"})
+
+		self.assertEqual([row["name"] for row in response.data["results"]], ["Sparse retrieval"])
+
+	def test_a_new_workspace_reports_empty_activity(self):
+		response = self.client.post(LIST_URL, {"name": "Retrieval"})
+
+		self.assertEqual(
+			(response.data["paper_count"], response.data["question_count"], response.data["last_question"]), (0, 0, None),
+		)
+
 	def test_orders_by_name_on_request(self):
 		Workspace.objects.create(user=self.user, name="Beta")
 		Workspace.objects.create(user=self.user, name="Alpha")
@@ -87,17 +123,32 @@ class WorkspaceViewSetTests(APITestCase):
 		self.assertIsNone(second.data["next"])
 
 	def test_list_query_count_does_not_grow_with_rows(self):
-		Workspace.objects.create(user=self.user, name="Workspace 0")
+		def add(index: int) -> None:
+			workspace = Workspace.objects.create(user=self.user, name=f"Workspace {index}")
+			WorkspacePaper.objects.create(workspace=workspace, paper=create_paper(str(index)))
+			Message.objects.create(workspace=workspace, role=MessageRole.USER, content="Question?")
+
+		add(0)
 		with CaptureQueriesContext(connection) as one:
 			self.client.get(LIST_URL)
 
 		for index in range(1, 5):
-			Workspace.objects.create(user=self.user, name=f"Workspace {index}")
+			add(index)
 		with CaptureQueriesContext(connection) as five:
 			response = self.client.get(LIST_URL)
 
 		self.assertEqual(len(response.data["results"]), 5)
 		self.assertEqual(len(five), len(one))
+
+	def test_turns_on_answering_only_from_the_workspaces_papers(self):
+		workspace = Workspace.objects.create(user=self.user, name="Retrieval")
+
+		response = self.client.patch(detail_url(workspace), {"papers_only": True})
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertTrue(response.data["papers_only"])
+		workspace.refresh_from_db()
+		self.assertTrue(workspace.papers_only)
 
 	def test_renames_a_workspace(self):
 		workspace = Workspace.objects.create(user=self.user, name="Old")
@@ -212,11 +263,14 @@ class WorkspacePaperViewSetTests(APITestCase):
 			self.client.get(self.list_url())
 
 		for index in range(4):
-			WorkspacePaper.objects.create(workspace=self.workspace, paper=create_paper(str(index)))
+			paper = create_paper(str(index))
+			PaperAuthor.objects.create(paper=paper, author=Author.objects.create(name=f"Author {index}"), order=1)
+			WorkspacePaper.objects.create(workspace=self.workspace, paper=paper)
 		with CaptureQueriesContext(connection) as five:
 			response = self.client.get(self.list_url())
 
 		self.assertEqual(len(response.data["results"]), 5)
+		self.assertEqual(response.data["results"][0]["paper"]["authors"], ["Author 3"])
 		self.assertEqual(len(five), len(one))
 
 	def test_removes_a_paper_by_its_id(self):
@@ -253,6 +307,65 @@ class WorkspacePaperViewSetTests(APITestCase):
 		self.client.force_authenticate(None)
 
 		self.assertEqual(self.client.get(self.list_url()).status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class MentionedPaperViewSetTests(APITestCase):
+	@classmethod
+	def setUpTestData(cls):
+		cls.user = User.objects.create_user(email="ada@example.com", password="password")
+		cls.workspace = Workspace.objects.create(user=cls.user, name="Retrieval")
+
+	def setUp(self):
+		self.client.force_authenticate(self.user)
+
+	def url(self, workspace: Workspace | None = None) -> str:
+		return reverse("workspace-mentioned-paper-list", args=[(workspace or self.workspace).pk])
+
+	def cite(self, external_id: str, authors: tuple[str, ...] = ()) -> Paper:
+		paper = create_paper(external_id)
+		for order, name in enumerate(authors, start=1):
+			PaperAuthor.objects.create(paper=paper, author=Author.objects.create(name=name), order=order)
+		chunk = Chunk.objects.create(paper=paper, text="Text.", start_page=1, end_page=1, chunk_index=0)
+		message = Message.objects.create(workspace=self.workspace, role=MessageRole.ASSISTANT, content="A [1].")
+		MessageCitation.objects.create(message=message, chunk=chunk, number=1)
+		return paper
+
+	def test_lists_cited_papers_most_recently_mentioned_first(self):
+		older = self.cite("1", authors=("Ashish Vaswani",))
+		newer = self.cite("2")
+		WorkspacePaper.objects.create(workspace=self.workspace, paper=older)
+
+		rows = self.client.get(self.url()).data["results"]
+
+		self.assertEqual([row["id"] for row in rows], [str(newer.id), str(older.id)])
+		self.assertEqual(
+			(rows[1]["mention_count"], rows[1]["in_workspace"], rows[1]["authors"]), (1, True, ["Ashish Vaswani"]),
+		)
+		self.assertFalse(rows[0]["in_workspace"])
+		self.assertIsNotNone(rows[0]["last_mentioned_at"])
+
+	def test_query_count_does_not_grow_with_papers(self):
+		self.cite("0", authors=("A",))
+		with CaptureQueriesContext(connection) as one:
+			self.client.get(self.url())
+
+		for index in range(1, 5):
+			self.cite(str(index), authors=("A", "B"))
+		with CaptureQueriesContext(connection) as five:
+			response = self.client.get(self.url())
+
+		self.assertEqual(len(response.data["results"]), 5)
+		self.assertEqual(len(five), len(one))
+
+	def test_another_users_workspace_is_not_found(self):
+		other = Workspace.objects.create(user=User.objects.create_user(email="grace@example.com"), name="Private")
+
+		self.assertEqual(self.client.get(self.url(other)).status_code, status.HTTP_404_NOT_FOUND)
+
+	def test_requires_login(self):
+		self.client.force_authenticate(None)
+
+		self.assertEqual(self.client.get(self.url()).status_code, status.HTTP_401_UNAUTHORIZED)
 
 
 class MessageViewSetTests(APITestCase):
@@ -335,10 +448,13 @@ class MessageViewSetTests(APITestCase):
 		self.assertEqual(response.status_code, status.HTTP_200_OK)
 		self.assertEqual(response["Content-Type"], "text/event-stream")
 		self.assertEqual(response["Cache-Control"], "no-cache")
-		self.assertEqual([name for name, _ in response.events], ["status", "delta", "message"])
-		self.assertEqual(response.events[0][1], {"stage": "searching", "label": "Searching the corpus"})
-		self.assertEqual(response.events[1][1], {"content": "Heads attend jointly [1]."})
-		message = response.events[2][1]
+		self.assertEqual([name for name, _ in response.events], ["question", "status", "delta", "message"])
+		question = response.events[0][1]
+		self.assertEqual((question["role"], question["content"]), (MessageRole.USER, "How does multi-head attention work?"))
+		self.assertEqual(question["id"], str(Message.objects.get(role=MessageRole.USER).id))
+		self.assertEqual(response.events[1][1], {"stage": "searching", "label": "Looking through papers"})
+		self.assertEqual(response.events[2][1], {"content": "Heads attend jointly [1]."})
+		message = response.events[3][1]
 		self.assertEqual((message["role"], message["citations"][0]["number"]), (MessageRole.ASSISTANT, 1))
 
 	def test_streams_for_a_client_that_only_accepts_event_streams(self):
@@ -351,7 +467,7 @@ class MessageViewSetTests(APITestCase):
 		with self.assertLogs("workspaces.views", "ERROR"):
 			response = self.post(self.stream_url(), {"content": "Hello?"}, ask=self.failing)
 
-		self.assertEqual([name for name, _ in response.events], ["status", "error"])
+		self.assertEqual([name for name, _ in response.events], ["question", "status", "error"])
 		self.assertIn("detail", response.events[-1][1])
 
 	def test_a_blank_streamed_question_is_a_400_on_content(self):

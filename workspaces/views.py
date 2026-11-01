@@ -8,6 +8,7 @@ from django.http import StreamingHttpResponse
 from django.utils.decorators import method_decorator
 from rest_framework import status
 from rest_framework.decorators import action
+from rest_framework.filters import SearchFilter
 from rest_framework.mixins import CreateModelMixin, DestroyModelMixin, ListModelMixin
 from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
@@ -17,28 +18,36 @@ from rest_framework.viewsets import GenericViewSet, ModelViewSet
 from enums.Workspace import MessageRole
 from iam.mixins import UserScopedMixin
 from iam.permissions import IsOwner
+from papers.models import PaperAuthor
+from server.filters import OrderingFilter
 from server.renderers import EventStreamRenderer
 from workspaces.exceptions import AnswerUnavailable
 from workspaces.mixins import WorkspaceScopedMixin
 from workspaces.models import Message, MessageCitation, Workspace, WorkspacePaper
-from workspaces.serializers import MessageSerializer, WorkspacePaperSerializer, WorkspaceSerializer
+from workspaces.serializers import (
+	MentionedPaperSerializer, MessageSerializer, WorkspacePaperSerializer, WorkspaceSerializer,
+)
 from workspaces.services import AskDelta, AskDone, AskEvent, AskService, AskStatus
 
 logger = logging.getLogger(__name__)
 
 
 class WorkspaceViewSet(UserScopedMixin, ModelViewSet):
-	"""Creates, lists, renames and deletes the caller's own workspaces."""
-	queryset = Workspace.objects.all()
+	"""Creates, lists, renames and deletes the caller's own workspaces, most recently active first."""
+	queryset = Workspace.objects.with_activity()
 	serializer_class = WorkspaceSerializer
 	permission_classes = [IsOwner]
+	filter_backends = [SearchFilter, OrderingFilter]
+	search_fields = [Workspace.fields.name]
 	ordering_fields = [Workspace.fields.name, Workspace.fields.created_at, Workspace.fields.updated_at]
-	ordering = [Workspace.fields.created_at.desc()]
+	ordering = ['-_last_activity_at']
 
 
 class WorkspacePaperViewSet(WorkspaceScopedMixin, ListModelMixin, CreateModelMixin, DestroyModelMixin, GenericViewSet):
 	"""Lists, adds and removes the papers in one of the caller's workspaces."""
-	queryset = WorkspacePaper.objects.select_related(WorkspacePaper.fields.paper)
+	queryset = WorkspacePaper.objects.select_related(WorkspacePaper.fields.paper).prefetch_related(
+		Prefetch('paper__paper_authors', queryset=PaperAuthor.objects.select_related('author')),
+	)
 	serializer_class = WorkspacePaperSerializer
 	lookup_field = WorkspacePaper.fields.paper
 	ordering_fields = [WorkspacePaper.fields.created_at]
@@ -46,6 +55,15 @@ class WorkspacePaperViewSet(WorkspaceScopedMixin, ListModelMixin, CreateModelMix
 
 	def get_serializer(self, *args, **kwargs):
 		return super().get_serializer(*args, workspace=self.workspace, **kwargs)
+
+
+class MentionedPaperViewSet(WorkspaceScopedMixin, ListModelMixin, GenericViewSet):
+	"""Lists the papers cited by answers in one of the caller's workspaces, most recently cited first."""
+	serializer_class = MentionedPaperSerializer
+	ordering = ['-_last_mentioned_at']
+
+	def get_queryset(self):
+		return self.workspace.mentioned_papers()
 
 
 @method_decorator(transaction.non_atomic_requests, name='dispatch')
@@ -84,6 +102,7 @@ class MessageViewSet(WorkspaceScopedMixin, ListModelMixin, CreateModelMixin, Gen
 
 	def event_stream(self, question: Message) -> Iterator[str]:
 		"""Formats the ask's events as server-sent events, ending with an error event if it fails."""
+		yield self.format_event('question', self.get_serializer(question).data)
 		try:
 			for event in AskService.ask(question):
 				yield self.format_event(*self.to_event(event))

@@ -9,7 +9,7 @@ from enums.Paper import PaperSource
 from enums.Workspace import AskStage, MessageRole
 from papers.models import Chunk, Paper
 from papers.services import (
-	Answer, AnswerService, DiscoveryService, QueryExpansionService, Retrieval, RetrievalService,
+	Answer, AnswerService, DiscoveryService, QueryExpansionService, RerankService, Retrieval, RetrievalService,
 )
 from workspaces.models import Message, Workspace, WorkspacePaper
 from workspaces.services import AskDelta, AskDone, AskService, AskStatus
@@ -61,10 +61,10 @@ class AskServiceTests(TestCase):
 			AskDelta("Heads attend jointly [1]."),
 		])
 		self.discover.assert_not_called()
-		self.retrieve.assert_called_once_with(QUESTION, QUERIES)
+		self.retrieve.assert_called_once_with(QUESTION, QUERIES, None)
 		self.stream.assert_called_once_with(QUESTION, [self.chunk])
 
-	def test_saves_the_answer_with_its_citations_and_cited_papers(self):
+	def test_saves_the_answer_with_its_citations(self):
 		events = self.ask([self.confident])
 
 		message = events[-1].message
@@ -74,7 +74,12 @@ class AskServiceTests(TestCase):
 			(self.workspace, MessageRole.ASSISTANT, "Heads attend jointly [1]."),
 		)
 		self.assertQuerySetEqual(message.citations.values_list("number", "chunk"), [(1, self.chunk.pk)])
+
+	def test_adds_the_cited_papers_to_the_workspace(self):
+		self.ask([self.confident])
+
 		self.assertQuerySetEqual(self.workspace.papers.all(), [self.paper])
+		self.assertQuerySetEqual(self.workspace.mentioned_papers(), [self.paper])
 
 	def test_a_paper_already_in_the_workspace_is_not_added_twice(self):
 		WorkspacePaper.objects.create(workspace=self.workspace, paper=self.paper)
@@ -83,9 +88,20 @@ class AskServiceTests(TestCase):
 
 		self.assertEqual(WorkspacePaper.objects.filter(workspace=self.workspace).count(), 1)
 
+	def test_does_not_wait_for_new_papers_without_a_pdf(self):
+		without_pdf = Paper.objects.create(
+			source=PaperSource.ARXIV, external_id="0000.0001", title="No PDF", url="https://example.com/paper",
+		)
+
+		events = self.ask([self.weak], discovered=[without_pdf])
+
+		self.assertNotIn(AskStatus(AskStage.INGESTING), events)
+		self.wait.assert_not_called()
+
 	def test_discovers_waits_for_new_papers_and_searches_again_when_the_corpus_is_weak(self):
 		new_paper = Paper.objects.create(
 			source=PaperSource.ARXIV, external_id="2005.14165", title="GPT-3", url="https://arxiv.org/abs/2005.14165",
+			pdf_url="https://arxiv.org/pdf/2005.14165",
 		)
 
 		events = self.ask([self.weak, self.confident], discovered=[new_paper, self.paper])
@@ -132,3 +148,45 @@ class WaitForIngestionTests(TestCase):
 			AskService.wait_for_ingestion([self.paper.pk])
 
 		self.assertEqual(sleep.call_count, 1)
+
+
+class AskPapersOnlyTests(TestCase):
+	@classmethod
+	def setUpTestData(cls):
+		user = get_user_model().objects.create_user(email="ada@example.com", password="password")
+		cls.workspace = Workspace.objects.create(user=user, name="Retrieval", papers_only=True)
+
+		def paper_with_chunk(external_id: str) -> Chunk:
+			paper = Paper.objects.create(
+				source=PaperSource.ARXIV, external_id=external_id, title=f"Paper {external_id}",
+				url=f"https://arxiv.org/abs/{external_id}", ingested_at=timezone.now(),
+			)
+			return Chunk.objects.create(paper=paper, heading="Attention", text="Multi-head attention.", start_page=1,
+										end_page=1, chunk_index=0)
+
+		cls.inside = paper_with_chunk("1")
+		cls.outside = paper_with_chunk("2")
+		WorkspacePaper.objects.create(workspace=cls.workspace, paper=cls.inside.paper)
+
+	def ask(self):
+		question = Message.objects.create(workspace=self.workspace, role=MessageRole.USER, content=QUESTION)
+		answer = Answer(content="No.", citations={}, is_insufficient_context=True)
+		with (
+			patch.object(QueryExpansionService, "expand", return_value=["attention"]),
+			patch.object(RetrievalService, "retrieve", wraps=RetrievalService.retrieve) as retrieve,
+			patch.object(RerankService, "rerank", side_effect=lambda question, chunks, top_k: [(chunk, 0.1) for chunk in chunks]),
+			patch.object(DiscoveryService, "discover") as discover,
+			patch.object(AnswerService, "stream", return_value=iter([answer])),
+		):
+			list(AskService.ask(question))
+		return retrieve, discover
+
+	def test_searches_only_the_workspaces_papers(self):
+		retrieve, _ = self.ask()
+
+		self.assertQuerySetEqual(retrieve.call_args.args[2], [self.inside])
+
+	def test_never_discovers_even_when_the_corpus_is_weak(self):
+		_, discover = self.ask()
+
+		discover.assert_not_called()

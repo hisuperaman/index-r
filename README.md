@@ -40,6 +40,8 @@ REDIS_PORT=6379
 LLM=anthropic:claude-sonnet-5-5
 ANTHROPIC_API_KEY=
 COHERE_API_KEY=
+# Optional, but without it Semantic Scholar rate-limits searches heavily
+SEMANTIC_SCHOLAR_API_KEY=
 ```
 
 4. Apply migrations:

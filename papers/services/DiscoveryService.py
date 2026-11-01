@@ -31,10 +31,11 @@ class DiscoveryService:
 
 	@staticmethod
 	def filter_relevant(question: str, papers: list[FetchedPaper]) -> list[FetchedPaper]:
-		"""Keeps the papers whose title and abstract score at least DISCOVERY_ABSTRACT_MIN_SCORE, best first."""
+		"""Keeps the best DISCOVERY_MAX_PAPERS papers whose title and abstract score at least DISCOVERY_ABSTRACT_MIN_SCORE."""
 		documents = [f"{paper.title}\n{paper.abstract or ''}".strip() for paper in papers]
-		return [
+		relevant = [
 			papers[index]
 			for index, score in RerankService.score(question, documents)
 			if score >= settings.DISCOVERY_ABSTRACT_MIN_SCORE
 		]
+		return relevant[:settings.DISCOVERY_MAX_PAPERS]

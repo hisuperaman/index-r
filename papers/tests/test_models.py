@@ -4,7 +4,7 @@ from django.utils import timezone
 
 from enums.Paper import IngestionStatus, PaperSource
 from papers.definitions import ExtractedChunk
-from papers.models import Chunk, Citation, Paper
+from papers.models import Author, Chunk, Citation, Paper, PaperAuthor
 
 
 def create_paper(external_id: str) -> Paper:
@@ -133,3 +133,13 @@ class ChunkCitationTests(TestCase):
 
 	def test_leaves_out_a_missing_section(self):
 		self.assertEqual(self.chunk(heading=None, start_page=1, end_page=1).citation, "Paper 1706.03762, p.1")
+
+
+class PaperAuthorNamesTests(TestCase):
+
+	def test_lists_names_in_byline_order(self):
+		paper = create_paper("1706.03762")
+		for order, name in ((2, "Noam Shazeer"), (1, "Ashish Vaswani")):
+			PaperAuthor.objects.create(paper=paper, author=Author.objects.create(name=name), order=order)
+
+		self.assertEqual(paper.author_names, ["Ashish Vaswani", "Noam Shazeer"])

@@ -1,11 +1,11 @@
 from rest_framework.exceptions import ValidationError
-from rest_framework.fields import CharField, FloatField, IntegerField
+from rest_framework.fields import CharField, FloatField, IntegerField, ListField
 from rest_framework.serializers import ModelSerializer
 
 from papers.models import Chunk, Paper
 
 
-class PaperSerializer(ModelSerializer):
+class PaperBasicSerializer(ModelSerializer):
 	class Meta:
 		model = Paper
 		fields = [
@@ -16,8 +16,16 @@ class PaperSerializer(ModelSerializer):
 		read_only_fields = fields
 
 
+class PaperSerializer(PaperBasicSerializer):
+	authors = ListField(child=CharField(), source='author_names', read_only=True)
+
+	class Meta(PaperBasicSerializer.Meta):
+		fields = [*PaperBasicSerializer.Meta.fields, 'authors']
+		read_only_fields = fields
+
+
 class ChunkSerializer(ModelSerializer):
-	paper = PaperSerializer(read_only=True)
+	paper = PaperBasicSerializer(read_only=True)
 	citation = CharField(read_only=True)
 	rank = FloatField(read_only=True)
 	score = FloatField(read_only=True)
