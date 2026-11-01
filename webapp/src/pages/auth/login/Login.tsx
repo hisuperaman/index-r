@@ -53,7 +53,7 @@ export const Login = () => {
     const isBusy = loginUser.isPending;
 
     return (
-        <Card className="mx-auto w-full max-w-md">
+        <Card className="mx-auto w-full max-w-md bg-background">
             <CardHeader className="text-center">
                 <CardTitle className="text-2xl">Welcome back</CardTitle>
                 <CardDescription>Sign in to continue to your account.</CardDescription>
