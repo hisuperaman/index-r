@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 import logging
+import os
 from datetime import timedelta
 from os.path import join
 from pathlib import Path
@@ -153,6 +154,11 @@ REST_FRAMEWORK = {
 	'DEFAULT_PERMISSION_CLASSES': [
 		'rest_framework.permissions.IsAuthenticated',
 	],
+	'DEFAULT_FILTER_BACKENDS': [
+		'server.filters.OrderingFilter',
+	],
+	'DEFAULT_PAGINATION_CLASS': 'server.pagination.CursorPagination',
+	'PAGE_SIZE': 20,
 }
 
 logging.basicConfig(
@@ -198,3 +204,17 @@ EMAIL_HOST_USER = env('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD')
 
 ACCOUNT_EMAIL_VERIFICATION = "mandatory"
+
+# Redis
+REDIS_HOST = env('REDIS_HOST', default='localhost')
+REDIS_PORT = env.int('REDIS_PORT', default=6379)
+
+# Celery
+# https://docs.celeryq.dev/en/stable/django/first-steps-with-django.html
+
+CELERY_BROKER_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/0"
+CELERY_TASK_DEFAULT_QUEUE = 'default'
+
+# LLM, as '<provider>:<model>' (e.g. 'anthropic:claude-sonnet-5-5'); the provider reads its own API key from the env
+LLM = env('LLM', default=None)
+os.environ.setdefault('PYDANTIC_AI_NO_BANNER', '1')

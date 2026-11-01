@@ -1,6 +1,6 @@
 from django.conf import settings
 from django.db.models import (
-	CASCADE, PROTECT, CharField, ForeignKey, ManyToManyField, TextField, UniqueConstraint,
+	CASCADE, PROTECT, CharField, CheckConstraint, ForeignKey, ManyToManyField, Q, TextField, UniqueConstraint,
 )
 
 from enums.Workspace import MessageRole
@@ -20,6 +20,11 @@ class Workspace(PrimaryModel):
 		through="WorkspacePaper",
 		related_name="workspaces",
 	)
+
+	class Meta:
+		constraints = [
+			CheckConstraint(condition=~Q(name=""), name="workspace_name_not_blank"),
+		]
 
 	def __str__(self):
 		return self.name
@@ -53,3 +58,18 @@ class Message(PrimaryModel):
 
 	def __str__(self):
 		return f"{self.role} message in {self.workspace.name}"
+
+
+class TrackedTopic(PrimaryModel):
+	"""A query a workspace re-runs to find papers published since it last looked."""
+	workspace = ForeignKey(Workspace, on_delete=CASCADE, related_name="tracked_topics")
+	query = CharField(max_length=255)
+
+	class Meta:
+		constraints = [
+			UniqueConstraint(fields=["workspace", "query"], name="unique_workspace_tracked_topic"),
+			CheckConstraint(condition=~Q(query=""), name="tracked_topic_query_not_blank"),
+		]
+
+	def __str__(self):
+		return f"{self.query} in {self.workspace.name}"
