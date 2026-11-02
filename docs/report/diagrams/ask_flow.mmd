@@ -1,0 +1,22 @@
+flowchart TB
+    classDef step fill:#F8FAFC,stroke:#334155,color:#0F172A,stroke-width:1.5px
+    classDef dec fill:#EEF2FF,stroke:#4338CA,color:#1E1B4B,stroke-width:1.5px
+    classDef end_ fill:#ECFDF5,stroke:#047857,color:#064E3B,stroke-width:1.5px
+    subgraph S1["1 · Prepare"]
+        direction LR
+        A(["Question"]):::end_ --> C["Save message; expand into<br/>3–5 keyword queries (LLM)"]:::step --> D{"Answer only from<br/>workspace papers?"}:::dec
+    end
+    subgraph S2["2 · Retrieve"]
+        direction LR
+        E["Search: workspace papers (yes)<br/>or shared corpus + own uploads (no)"]:::step --> G["Full-text search, top 50 boosted<br/>→ Cohere rerank 20 → best 5"]:::step --> I{"&lt; 5 matches or<br/>best score &lt; 0.30?"}:::dec
+    end
+    subgraph S3["3 · Discover (only if a gate fires)"]
+        direction LR
+        J["Discover from arXiv ·<br/>OpenAlex · S2"]:::step --> K["Ingest PDFs<br/>(wait ≤ 60 s)"]:::step --> L["Search and<br/>rerank again"]:::step
+    end
+    subgraph S4["4 · Answer"]
+        direction LR
+        M["Prompt LLM with numbered<br/>passages; stream (SSE)"]:::step --> O["Map [n] → paper · section · page;<br/>save answer and citations"]:::step --> Q(["Cited answer"]):::end_
+    end
+    S1 --> S2 --> S3 --> S4
+    S2 -. "no gate fires" .-> S4

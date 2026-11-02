@@ -1,0 +1,21 @@
+flowchart LR
+    classDef actor fill:#EEF2FF,stroke:#4338CA,color:#1E1B4B,stroke-width:1.5px
+    classDef uc fill:#FFFFFF,stroke:#334155,color:#0F172A,stroke-width:1.2px
+    R["Researcher"]:::actor
+    AI["AI assistant<br/>(MCP client)"]:::actor
+    AD["Administrator"]:::actor
+    subgraph IndexR
+        U1(["Sign up / log in<br/>(email or Google)"]):::uc
+        U2(["Create and manage workspaces"]):::uc
+        U3(["Ask a question,<br/>get a cited answer"]):::uc
+        U4(["Inspect a citation<br/>(section, page, text)"]):::uc
+        U5(["Add, remove or upload papers"]):::uc
+        U6(["Track topics and papers"]):::uc
+        U7(["Review tracking updates"]):::uc
+        U8(["Create / revoke access tokens"]):::uc
+        U9(["Search papers via MCP tools"]):::uc
+        U10(["Moderate papers, authors,<br/>workspaces"]):::uc
+    end
+    R --- U1 & U2 & U3 & U4 & U5 & U6 & U7 & U8
+    AI --- U9 & U3 & U6
+    AD --- U10

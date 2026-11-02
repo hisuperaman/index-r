@@ -1,0 +1,19 @@
+flowchart TB
+    classDef step fill:#F8FAFC,stroke:#334155,color:#0F172A,stroke-width:1.5px
+    classDef store fill:#ECFDF5,stroke:#047857,color:#064E3B,stroke-width:1.5px
+    subgraph R1[" "]
+        direction LR
+        A["Open-access PDF URL<br/>or uploaded file"]:::step --> B["Download ≤ 50 MB;<br/>check %PDF signature"]:::step
+        B --> C["pymupdf4llm:<br/>PDF → Markdown per page"]:::step
+        C --> D["Split into blocks;<br/>group under headings"]:::step
+    end
+    subgraph R2[" "]
+        direction LR
+        E["Drop references and<br/>acknowledgements"]:::step --> F["Pack paragraphs into<br/>chunks ≤ 1,000 chars<br/>with page range"]:::step
+        F --> G[("Chunk rows")]:::store
+        G --> H["Trigger builds tsvector<br/>heading = A, text = B"]:::step
+        H --> I[("GIN index")]:::store
+    end
+    R1 --> R2
+    style R1 fill:#FFFFFF,stroke:#FFFFFF
+    style R2 fill:#FFFFFF,stroke:#FFFFFF

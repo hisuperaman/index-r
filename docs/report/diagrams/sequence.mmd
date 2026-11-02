@@ -1,0 +1,32 @@
+%%{init: {"sequence": {"width": 105, "actorMargin": 18, "boxMargin": 6, "messageMargin": 26, "noteMargin": 6, "mirrorActors": false}}}%%
+sequenceDiagram
+    autonumber
+    participant B as Browser
+    participant API as API
+    participant AS as AskService
+    participant DB as PostgreSQL
+    participant LLM as LLM
+    participant CO as Cohere
+    participant W as Worker
+    B->>API: POST …/messages/stream/
+    API->>DB: save question
+    API-->>B: event: question
+    API->>AS: ask(question)
+    AS->>LLM: expand query
+    AS-->>B: status: understanding
+    AS->>DB: search + boost
+    AS->>CO: rerank
+    alt evidence too weak
+        AS-->>B: status: finding papers
+        AS->>AS: discover (3 sources)
+        AS->>W: queue ingestion
+        W->>DB: store chunks
+        AS->>DB: search again
+    end
+    AS-->>B: status: writing
+    loop streamed output
+        AS->>LLM: grounded answer
+        AS-->>B: event: delta
+    end
+    AS->>DB: save answer + citations
+    AS-->>B: event: message

@@ -1,0 +1,30 @@
+flowchart TB
+    classDef proc fill:#EEF2FF,stroke:#4338CA,color:#1E1B4B,stroke-width:1.5px
+    classDef store fill:#ECFDF5,stroke:#047857,color:#064E3B,stroke-width:1.5px
+    classDef ent fill:#F8FAFC,stroke:#334155,color:#0F172A,stroke-width:1.5px
+
+    U["Researcher"]:::ent
+    P1(("1.0<br/>Manage account<br/>and workspaces")):::proc
+    P2(("2.0<br/>Answer<br/>questions")):::proc
+    P3(("3.0<br/>Discover and<br/>ingest papers")):::proc
+    P4(("4.0<br/>Track topics<br/>and papers")):::proc
+    D1[("D1 Users and tokens")]:::store
+    D2[("D2 Workspaces and messages")]:::store
+    D3[("D3 Papers and chunks")]:::store
+    D4[("D4 Tracking updates")]:::store
+    EXT["Scholarly sources"]:::ent
+
+    U -- "credentials, workspace" --> P1
+    P1 <--> D1
+    P1 <--> D2
+    U -- "question" --> P2
+    P2 -- "search" --> D3
+    P2 -- "weak evidence" --> P3
+    P3 <--> EXT
+    P3 -- "chunks" --> D3
+    P2 -- "answer + citations" --> D2
+    P2 -- "streamed answer" --> U
+    U -- "topics, tracked papers" --> P4
+    P4 --> P3
+    P4 -- "updates" --> D4
+    D4 -- "X updates since date" --> U

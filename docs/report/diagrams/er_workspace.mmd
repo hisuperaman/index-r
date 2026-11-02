@@ -1,0 +1,18 @@
+erDiagram
+    USER ||--o{ WORKSPACE : owns
+    WORKSPACE ||--o{ WORKSPACE_PAPER : keeps
+    PAPER ||--o{ WORKSPACE_PAPER : "listed in"
+    WORKSPACE ||--o{ MESSAGE : contains
+    MESSAGE ||--o{ MESSAGE_CITATION : cites
+    CHUNK ||--o{ MESSAGE_CITATION : "cited as [n]"
+    WORKSPACE ||--o{ TRACKED_TOPIC : tracks
+    WORKSPACE ||--o{ TRACKING_UPDATE : receives
+    TRACKED_TOPIC |o--o{ TRACKING_UPDATE : "found by"
+    PAPER ||--o{ TRACKING_UPDATE : "is about"
+
+    WORKSPACE { uuid id string name bool papers_only datetime updates_seen_at }
+    WORKSPACE_PAPER { datetime created_at datetime tracked_at }
+    MESSAGE { uuid id string role text content }
+    MESSAGE_CITATION { int number }
+    TRACKED_TOPIC { uuid id string query datetime checked_at }
+    TRACKING_UPDATE { uuid id datetime created_at }
