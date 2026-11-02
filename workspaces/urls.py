@@ -1,0 +1,8 @@
+from rest_framework.routers import DefaultRouter
+from workspaces.views import WorkspaceViewSet
+
+router = DefaultRouter()
+router.register(r"workspaces", WorkspaceViewSet, basename="workspace")
+
+urlpatterns = router.urls
+
