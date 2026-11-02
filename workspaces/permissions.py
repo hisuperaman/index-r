@@ -1,12 +1,14 @@
 from rest_framework.permissions import BasePermission
 
-OWNER_FIELD = "user"
-
 
 class IsWorkspaceOwner(BasePermission):
-    """Object-level guard: only the owner may touch a workspace.
-
-    The viewset queryset is already scoped to the user; this is defence in depth."""
+    """Object-level guard: only the owner may touch a workspace."""
+    
+    @property
+    def owner_field(self):
+        return "user"
 
     def has_object_permission(self, request, view, obj):
-        return getattr(obj, f"{OWNER_FIELD}_id") == request.user.id
+        return getattr(obj, self.owner_field) == request.user
+
+
