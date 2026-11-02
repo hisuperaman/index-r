@@ -136,17 +136,17 @@ logbook.
 
 | Week | Dates (2026) | Milestone | Tickets |
 |---|---|---|---|
-| 1 | 3 – 9 Aug | Problem identification | PLN-01 |
-| 2 | 10 – 16 Aug | Problem identification | PLN-01, SET-01 |
-| 3 | 17 – 23 Aug | Literature survey | PLN-02 |
-| 4 | 24 – 30 Aug | Literature survey | PLN-03, PLN-04 |
-| 5 | 31 Aug – 6 Sep | Feasibility study | PLN-05, SET-02, SET-04, SET-05, REV-01 |
-| 6 | 7 – 13 Sep | Feasibility study | AUTH-01, AUTH-02, AUTH-03, AUTH-04, UI-01, UI-02, REV-02 |
-| 7 | 14 – 20 Sep | System design | DOC-01, MOD-01, MOD-02, FET-01, FET-02, FET-03, SET-03 |
-| 8 | 21 – 27 Sep | System design | ING-01, ING-02, ING-03, ING-04, SRCH-01, LLM-01, REV-03 |
-| 9 | 28 Sep – 4 Oct | Design validation | SRCH-02, LLM-02, LLM-03, DISC-01, DISC-02, DISC-03, ASK-03, QA-01, REV-04 |
-| 10 | 5 – 11 Oct | Design validation | ASK-01, ASK-02, UI-03, UI-04, UI-05, UI-06, QA-02, REV-05 |
-| 11 | 12 – 18 Oct | Report drafting | ASK-04, UPL-01, UPL-02, UPL-03, ADM-01, MCP-01 – MCP-05, REV-06 |
-| 12 | 19 – 25 Oct | Report drafting | TRK-01 – TRK-06, QA-03, QA-04, QA-05, DOC-02, REV-07 |
-| 13 | 26 Oct – 1 Nov | Presentation and viva | DOC-02, DOC-03 |
-| 14 | 2 – 8 Nov | Presentation and viva | DOC-03, internal review by the project committee |
+| 1 | 10 – 15 Aug | Problem identification | PLN-01 |
+| 2 | 17 – 21 Aug | Problem identification | PLN-01, SET-01 |
+| 3 | 23 – 28 Aug | Literature survey | PLN-02 |
+| 4 | 30 Aug – 3 Sep | Literature survey | PLN-03, PLN-04 |
+| 5 | 5 – 10 Sep | Feasibility study | PLN-05, SET-02, SET-04, SET-05, REV-01 |
+| 6 | 12 – 16 Sep | Feasibility study | AUTH-01, AUTH-02, AUTH-03, AUTH-04, UI-01, UI-02, REV-02 |
+| 7 | 18 – 23 Sep | System design | DOC-01, MOD-01, MOD-02, FET-01, FET-02, FET-03, SET-03 |
+| 8 | 25 – 29 Sep | System design | ING-01, ING-02, ING-03, ING-04, SRCH-01, LLM-01, REV-03 |
+| 9 | 1 – 6 Oct | Design validation | SRCH-02, LLM-02, LLM-03, DISC-01, DISC-02, DISC-03, ASK-03, QA-01, REV-04 |
+| 10 | 8 – 12 Oct | Design validation | ASK-01, ASK-02, UI-03, UI-04, UI-05, UI-06, QA-02, REV-05 |
+| 11 | 14 – 19 Oct | Report drafting | ASK-04, UPL-01, UPL-02, UPL-03, ADM-01, MCP-01 – MCP-05, REV-06 |
+| 12 | 21 – 25 Oct | Report drafting | TRK-01 – TRK-06, QA-03, QA-04, QA-05, DOC-02, REV-07 |
+| 13 | 27 Oct – 1 Nov | Presentation and viva | DOC-02, DOC-03 |
+| 14 | 3 – 7 Nov | Presentation and viva | DOC-03, internal review by the project committee |
