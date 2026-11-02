@@ -1,3 +1,5 @@
+from datetime import date
+
 from django.conf import settings
 
 from enums.Paper import PaperSource
@@ -18,8 +20,11 @@ class SemanticScholarFetcherService(BaseFetcherService):
 		return {"x-api-key": settings.SEMANTIC_SCHOLAR_API_KEY} if settings.SEMANTIC_SCHOLAR_API_KEY else {}
 
 	@classmethod
-	def search(cls, query: str, limit: int) -> list[FetchedPaper]:
-		response = cls.get({"query": query, "limit": cls.clamp_limit(limit), "fields": cls.FIELDS})
+	def search(cls, query: str, limit: int, since: date | None = None) -> list[FetchedPaper]:
+		params = {"query": query, "limit": cls.clamp_limit(limit), "fields": cls.FIELDS}
+		if since:
+			params["publicationDateOrYear"] = f"{since.isoformat()}:"
+		response = cls.get(params)
 		papers = [cls.parse_paper(paper) for paper in response.json().get("data") or []]
 		return [paper for paper in papers if paper]
 

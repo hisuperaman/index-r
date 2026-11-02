@@ -54,9 +54,10 @@ flowchart TD
     D --> ING["Ingest new papers<br/>open-access PDF → Markdown → section chunks → PostgreSQL"]
     ING --> S
 
-    T["Live tracking worker<br/>(Celery beat)"] --> RP["Re-run discovery for tracked topics"]
-    RP --> DIFF["Diff against last snapshot"]
-    DIFF --> UP["'X updates since [date]'<br/>shown when the workspace is reopened"]
+    T["Daily tracking check<br/>(Celery beat)"] --> RP["Topics: discovery limited to papers<br/>published since the last check"]
+    T --> CIT["Tracked papers: new citing papers (OpenAlex)<br/>and new arXiv versions"]
+    RP --> UP["Tracking updates<br/>'X updates since [date]' when the workspace is reopened"]
+    CIT --> UP
 
     MCP["MCP server<br/>(access token)"] --> TOOLS["search_papers · ask · workspace and paper tools"]
     TOOLS --> CLIENTS["MCP clients<br/>(Claude Desktop, IDEs, ...)"]
@@ -184,19 +185,19 @@ shows weak precision, the upgrade path is a true-BM25 PostgreSQL extension, whic
 | Model | App | Purpose |
 |---|---|---|
 | `User` | `iam` | Email-based account (no username) |
-| `Workspace` | `workspaces` | A user's topic-scoped space; owns its chat and its paper list |
-| `WorkspacePaper` | `workspaces` | The papers a workspace uses: cited papers are added automatically, and the user can add or remove papers (unique per workspace; a paper in use cannot be deleted). With `Workspace.papers_only` on, answers use only these. All papers ever cited are derived from `MessageCitation` |
+| `Workspace` | `workspaces` | A user's topic-scoped space; owns its chat and its paper list. `updates_seen_at` is when its tracking updates were last opened, so the unseen count is derived |
+| `WorkspacePaper` | `workspaces` | The papers a workspace uses: cited papers are added automatically, and the user can add or remove papers (unique per workspace; a paper in use cannot be deleted). `tracked_at` marks a shared paper the workspace tracks for new citations and versions. With `Workspace.papers_only` on, answers use only these. All papers ever cited are derived from `MessageCitation` |
 | `Message` | `workspaces` | A chat message in a workspace (`user` or `assistant`) |
 | `MessageCitation` | `workspaces` | A chunk an assistant message cites as `[n]` |
-| `Paper` | `papers` | A paper: source, external ID, DOI, title, abstract, venue, citation count, publication date and precision, URLs, and when ingestion completed or failed (status is derived). With an `owner` it is a private upload only that user can see; without one it is in the shared corpus |
+| `Paper` | `papers` | A paper: source, external ID, DOI, title, abstract, venue, citation count, publication date and precision, URLs, when arXiv last revised it, when its citations were last checked, and when ingestion completed or failed (status is derived). With an `owner` it is a private upload only that user can see; without one it is in the shared corpus |
 | `Author`, `PaperAuthor` | `papers` | Authors (with optional ORCID) and their order on each paper |
 | `Chunk` | `papers` | A section-aligned piece of a paper: heading, text, page range, index, and a weighted full-text vector |
 | `Citation` | `papers` | A paper → cited paper edge, used for graph expansion and for "new citations" in live tracking |
 | `ApiToken` | `integrations` | A user's named personal access token for MCP clients; only its SHA-256 hash and a short prefix are stored |
-| `TrackedTopic` | `workspaces` | A query a workspace re-runs to find new papers (unique per workspace) |
+| `TrackedTopic` | `workspaces` | A query a workspace re-runs daily to find newly published papers (unique per workspace, up to 10), with when it was last checked |
+| `TrackingUpdate` | `workspaces` | Something tracking found for a workspace: a new paper on a topic (`topic` set), a new paper citing a tracked paper (`cited_paper` set), or a new arXiv version of a tracked paper (neither). The kind is derived; each new paper and citation is reported once per workspace |
 
-**Planned:** update events for live tracking, the admin request queue, and `User.organization_id` (added with
-organisations).
+**Planned:** the admin request queue and `User.organization_id` (added with organisations).
 
 ---
 
@@ -227,7 +228,7 @@ organisations).
 | Admin: papers (search, visibility filter, delete), authors and workspaces in the Django admin | `papers/admin.py`, `workspaces/admin.py` | Done |
 | MCP server (`manage.py mcp`: stdio locally, `--http` for remote clients) with tools `search_papers`, `ask` (with progress), `list_workspaces`, `create_workspace`, `list_workspace_papers`, `get_paper`, `add_paper_to_workspace`, `remove_paper_from_workspace`; each acts as the token's user and sees only `visible_to(user)` papers | `integrations/` | Done |
 | Personal access tokens `/api/integrations/tokens/` (create once-shown, list, revoke) and Settings → Integrations with ready-made client setup | `integrations/`, `webapp/src/pages/settings` | Done |
-| Live tracking | — | Planned |
+| Live tracking: topics (`/api/workspaces/<id>/topics/`) and tracked papers (`PATCH …/papers/<paper_id>/ {tracked}`), a daily Celery beat check (`TrackingService`: date-limited discovery per topic, OpenAlex `cites:` for new citing papers, arXiv `id_list` for new versions), updates `…/updates/` with `…/updates/seen/`, the "X updates since" banner and Tracking panel, MCP `track_topic` / `untrack_topic` / `list_updates`, and an hourly requeue of stuck ingestions | `workspaces/`, `papers/services/fetchers/`, `webapp/` | Done |
 
 The service classes are independent of the HTTP layer, so the API, background jobs and the MCP server can all call the
 same code.

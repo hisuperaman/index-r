@@ -1,7 +1,7 @@
 import {keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient} from "@tanstack/react-query";
 import type {AxiosError} from "axios";
 import {Workspaces} from "@/api";
-import type {Workspace, WorkspacePaper} from "@/models";
+import type {TrackedTopic, Workspace, WorkspacePaper} from "@/models";
 import type {WorkspaceFormData, WorkspaceUpdate} from "@/schemas";
 import {queryKeys} from "./keys.ts";
 import {cursorPages} from "./pagination.ts";
@@ -65,6 +65,7 @@ export const useAddWorkspacePaper = (id: string) => {
         mutationFn: (paperId) => Workspaces.addPaper(id, paperId),
         onSuccess: () => Promise.all([
             queryClient.invalidateQueries({queryKey: queryKeys.workspacePapers(id)}),
+            queryClient.invalidateQueries({queryKey: queryKeys.updates(id)}),
             queryClient.invalidateQueries({queryKey: queryKeys.mentionedPapers(id)}),
             queryClient.invalidateQueries({queryKey: queryKeys.workspaces}),
         ]),
@@ -94,3 +95,55 @@ export const useMentionedPapers = (id: string) =>
         queryKey: queryKeys.mentionedPapers(id),
         ...cursorPages(() => Workspaces.listMentionedPapers(id)),
     });
+
+export const useTrackPaper = (id: string) => {
+    const queryClient = useQueryClient();
+    return useMutation<WorkspacePaper, AxiosError, { paperId: string; tracked: boolean }>({
+        mutationFn: ({paperId, tracked}) => Workspaces.trackPaper(id, paperId, tracked),
+        onSuccess: () => queryClient.invalidateQueries({queryKey: queryKeys.workspacePapers(id)}),
+    });
+};
+
+export const useTopics = (id: string) =>
+    useQuery<TrackedTopic[], AxiosError>({
+        queryKey: queryKeys.topics(id),
+        queryFn: () => Workspaces.listTopics(id),
+    });
+
+export const useAddTopic = (id: string) => {
+    const queryClient = useQueryClient();
+    return useMutation<TrackedTopic, AxiosError, string>({
+        mutationFn: (query) => Workspaces.addTopic(id, query),
+        onSuccess: () => queryClient.invalidateQueries({queryKey: queryKeys.topics(id)}),
+    });
+};
+
+export const useRemoveTopic = (id: string) => {
+    const queryClient = useQueryClient();
+    return useMutation<void, AxiosError, string>({
+        mutationFn: (topicId) => Workspaces.removeTopic(id, topicId),
+        onSuccess: () => Promise.all([
+            queryClient.invalidateQueries({queryKey: queryKeys.topics(id)}),
+            queryClient.invalidateQueries({queryKey: queryKeys.updates(id)}),
+            queryClient.invalidateQueries({queryKey: queryKeys.workspace(id)}),
+        ]),
+    });
+};
+
+export const useUpdates = (id: string, enabled = true) =>
+    useInfiniteQuery({
+        queryKey: queryKeys.updates(id),
+        ...cursorPages(() => Workspaces.listUpdates(id)),
+        enabled,
+    });
+
+export const useMarkUpdatesSeen = (id: string) => {
+    const queryClient = useQueryClient();
+    return useMutation<void, AxiosError>({
+        mutationFn: () => Workspaces.markUpdatesSeen(id),
+        onSuccess: () => Promise.all([
+            queryClient.invalidateQueries({queryKey: queryKeys.workspace(id)}),
+            queryClient.invalidateQueries({queryKey: queryKeys.workspaces}),
+        ]),
+    });
+};

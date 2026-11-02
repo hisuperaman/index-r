@@ -13,6 +13,8 @@ from papers.definitions import ExtractedChunk
 from papers.querysets import AuthorQuerySet, ChunkQuerySet, PaperQuerySet
 from server.models import BaseModel, PrimaryModel
 
+ARXIV_DOI_PREFIX = "10.48550/arxiv."
+
 
 class Author(BaseModel):
 	name = CharField(max_length=255)
@@ -54,6 +56,8 @@ class Paper(PrimaryModel):
 		settings.AUTH_USER_MODEL, on_delete=CASCADE, blank=True, null=True, related_name="uploaded_papers",
 	)
 	content_hash = CharField(max_length=64, blank=True, null=True)
+	revised_at = DateTimeField(blank=True, null=True)
+	citations_checked_at = DateTimeField(blank=True, null=True)
 	ingested_at = DateTimeField(blank=True, null=True)
 	ingestion_failed_at = DateTimeField(blank=True, null=True)
 	references = ManyToManyField(
@@ -131,6 +135,22 @@ class Paper(PrimaryModel):
 	@property
 	def is_private(self) -> bool:
 		return self.owner_id is not None
+
+	@property
+	def arxiv_id(self) -> str | None:
+		"""The paper's arXiv ID, from its source or its arXiv DOI."""
+		if self.source == PaperSource.ARXIV:
+			return self.external_id
+		if self.doi and self.doi.lower().startswith(ARXIV_DOI_PREFIX):
+			return self.doi[len(ARXIV_DOI_PREFIX):]
+		return None
+
+	@property
+	def lookup_doi(self) -> str | None:
+		"""The DOI to look the paper up by, falling back to its arXiv DOI."""
+		if self.doi:
+			return self.doi
+		return f"{ARXIV_DOI_PREFIX}{self.arxiv_id}" if self.arxiv_id else None
 
 	@property
 	def author_names(self) -> list[str]:

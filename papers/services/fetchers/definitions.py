@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 
 from enums.Paper import DatePrecision, PaperSource
 
@@ -25,4 +25,5 @@ class FetchedPaper:
 	publication_date: date | None = None
 	publication_date_precision: DatePrecision | None = None
 	pdf_url: str | None = None
+	revised_at: datetime | None = None
 	authors: list[FetchedAuthor] = field(default_factory=list)

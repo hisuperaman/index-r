@@ -185,3 +185,26 @@ class PaperOwnershipTests(TestCase):
 	def test_is_private_follows_the_owner(self):
 		self.assertFalse(create_paper("1").is_private)
 		self.assertTrue(Paper(owner=self.user).is_private)
+
+
+class PaperIdentifierTests(TestCase):
+
+	def paper(self, **fields):
+		return Paper(**{"source": PaperSource.OPENALEX, "external_id": "W1", "title": "A paper", **fields})
+
+	def test_an_arxiv_paper_is_looked_up_by_its_arxiv_doi(self):
+		paper = self.paper(source=PaperSource.ARXIV, external_id="1706.03762")
+
+		self.assertEqual((paper.arxiv_id, paper.lookup_doi), ("1706.03762", "10.48550/arxiv.1706.03762"))
+
+	def test_a_paper_from_another_source_with_an_arxiv_doi_has_an_arxiv_id(self):
+		paper = self.paper(doi="10.48550/arXiv.2005.11401")
+
+		self.assertEqual((paper.arxiv_id, paper.lookup_doi), ("2005.11401", "10.48550/arXiv.2005.11401"))
+
+	def test_a_journal_paper_has_no_arxiv_id(self):
+		paper = self.paper(doi="10.1038/nature14539")
+
+		self.assertEqual((paper.arxiv_id, paper.lookup_doi), (None, "10.1038/nature14539"))
+		self.assertIsNone(self.paper().lookup_doi)
+

@@ -1,3 +1,4 @@
+from datetime import date
 from unittest.mock import patch
 
 from django.test import TestCase
@@ -11,10 +12,13 @@ from papers.services.fetchers.definitions import FetchedPaper
 QUESTION = "How does multi-head attention work?"
 
 
-def fetched(external_id: str, title: str, abstract: str | None = None, doi: str | None = None) -> FetchedPaper:
+def fetched(
+		external_id: str, title: str, abstract: str | None = None, doi: str | None = None,
+		publication_date: date | None = None,
+) -> FetchedPaper:
 	return FetchedPaper(
 		source=PaperSource.ARXIV, external_id=external_id, title=title, abstract=abstract, doi=doi,
-		url=f"https://arxiv.org/abs/{external_id}",
+		url=f"https://arxiv.org/abs/{external_id}", publication_date=publication_date,
 	)
 
 
@@ -28,11 +32,22 @@ class DiscoveryFetchTests(TestCase):
 	def test_searches_every_query_and_drops_repeats_across_queries(self):
 		results = {"multi-head attention": [ATTENTION], "transformer": [fetched("W1", "Attention is all you need"), BERT]}
 
-		with patch.object(OrchestratorFetcherService, "search", side_effect=lambda query, limit: results[query]) as search:
+		with patch.object(OrchestratorFetcherService, "search", side_effect=lambda query, limit, since: results[query]) as search:
 			papers = DiscoveryService.fetch(["multi-head attention", "transformer"])
 
 		self.assertEqual(papers, [ATTENTION, BERT])
-		search.assert_any_call("transformer", DiscoveryService.LIMIT_PER_PROVIDER)
+		search.assert_any_call("transformer", DiscoveryService.LIMIT_PER_PROVIDER, None)
+
+	def test_since_keeps_only_papers_published_from_that_date(self):
+		recent = fetched("W7", "Recent attention paper", publication_date=date(2026, 10, 20))
+		old = fetched("W8", "Old attention paper", publication_date=date(2026, 9, 1))
+		undated = fetched("W9", "Undated attention paper")
+
+		with patch.object(OrchestratorFetcherService, "search", return_value=[recent, old, undated]) as search:
+			papers = DiscoveryService.fetch(["attention"], since=date(2026, 10, 1))
+
+		self.assertEqual(papers, [recent])
+		search.assert_called_once_with("attention", DiscoveryService.LIMIT_PER_PROVIDER, date(2026, 10, 1))
 
 
 class DiscoveryFilterRelevantTests(TestCase):

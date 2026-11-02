@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime
 from unittest.mock import patch
 
 from django.test import TestCase
@@ -71,6 +71,15 @@ class PaperStoreServiceTests(TestCase):
 		self.assertEqual(paper.abstract, "The dominant sequence transduction models.")
 		self.assertEqual(paper.pdf_url, "https://arxiv.org/pdf/1706.03762")
 		self.assertEqual(paper.citation_count, 100)
+
+	def test_stores_when_arxiv_last_revised_the_paper_and_leaves_later_revisions_to_tracking(self):
+		first = datetime(2023, 8, 2, tzinfo=UTC)
+		PaperStoreService.store_one(fetched_paper(revised_at=first))
+
+		paper = PaperStoreService.store_one(fetched_paper(revised_at=datetime(2024, 1, 1, tzinfo=UTC)))
+
+		paper.refresh_from_db()
+		self.assertEqual(paper.revised_at, first)
 
 	def test_a_repeat_keeps_fields_already_set(self):
 		PaperStoreService.store_one(fetched_paper(abstract="Original abstract."))

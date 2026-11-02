@@ -7,7 +7,7 @@ from papers.services.fetchers.definitions import FetchedAuthor, FetchedPaper
 class PaperStoreService:
 	"""Saves fetched papers and their authors, reusing rows the corpus already has."""
 
-	FILLABLE_FIELDS = (Paper.fields.abstract, Paper.fields.venue, Paper.fields.pdf_url)
+	FILLABLE_FIELDS = (Paper.fields.abstract, Paper.fields.venue, Paper.fields.pdf_url, Paper.fields.revised_at)
 
 	@classmethod
 	def store(cls, fetched_papers: list[FetchedPaper]) -> list[Paper]:
@@ -36,6 +36,7 @@ class PaperStoreService:
 					publication_date_precision=fetched.publication_date_precision,
 					url=fetched.url,
 					pdf_url=fetched.pdf_url,
+					revised_at=fetched.revised_at,
 				)
 				cls.add_authors(paper, fetched.authors)
 			cls.queue_ingestion(paper)

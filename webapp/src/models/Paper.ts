@@ -10,6 +10,7 @@ export interface PaperBasic {
 	publication_date_precision: DatePrecision | null;
 	url: string;
 	pdf_url: string | null;
+	revised_at: string | null;
 	is_private: boolean;
 }
 

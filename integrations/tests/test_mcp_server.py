@@ -17,7 +17,7 @@ from workspaces.services import AskDone, AskService, AskStatus
 
 TOOLS = {
 	"search_papers", "list_workspaces", "create_workspace", "list_workspace_papers", "get_paper",
-	"add_paper_to_workspace", "remove_paper_from_workspace", "ask",
+	"add_paper_to_workspace", "remove_paper_from_workspace", "ask", "track_topic", "untrack_topic", "list_updates",
 }
 
 

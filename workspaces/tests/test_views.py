@@ -1,9 +1,11 @@
 import json
+from datetime import timedelta
 from unittest.mock import patch
 
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.urls import resolve, reverse
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase, APITransactionTestCase
 
@@ -12,7 +14,8 @@ from enums.Workspace import AskStage, MessageRole
 from iam.models import User
 from papers.models import Author, Chunk, Paper, PaperAuthor
 from papers.services import Answer
-from workspaces.models import Message, MessageCitation, Workspace, WorkspacePaper
+from workspaces import views
+from workspaces.models import Message, MessageCitation, TrackedTopic, TrackingUpdate, Workspace, WorkspacePaper
 from workspaces.services import AskDelta, AskDone, AskService, AskStatus
 
 LIST_URL = reverse("workspace-list")
@@ -579,3 +582,205 @@ class MessageAskFailureTests(APITransactionTestCase):
 
 		self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
 		self.assertQuerySetEqual(Message.objects.values_list("role", "content"), [(MessageRole.USER, "Hello?")])
+
+
+class WorkspacePaperTrackingTests(APITestCase):
+	@classmethod
+	def setUpTestData(cls):
+		cls.user = User.objects.create_user(email="ada@example.com", password="password")
+		cls.workspace = Workspace.objects.create(user=cls.user, name="Retrieval")
+		cls.paper = create_paper("1706.03762")
+		cls.link = WorkspacePaper.objects.create(workspace=cls.workspace, paper=cls.paper)
+
+	def setUp(self):
+		self.client.force_authenticate(self.user)
+		self.citation_check = self.enterContext(patch.object(views.check_paper_citations, "delay"))
+
+	def detail_url(self, paper: Paper) -> str:
+		return reverse("workspace-paper-detail", args=[self.workspace.pk, paper.pk])
+
+	def test_tracking_a_paper_records_when_and_checks_it_right_away(self):
+		with self.captureOnCommitCallbacks(execute=True):
+			response = self.client.patch(self.detail_url(self.paper), {"tracked": True})
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertTrue(response.data["tracked"])
+		self.link.refresh_from_db()
+		self.assertIsNotNone(self.link.tracked_at)
+		self.citation_check.assert_called_once_with(self.paper.pk)
+
+	def test_tracking_again_keeps_the_start_time_and_doesnt_recheck(self):
+		started = timezone.now() - timedelta(days=3)
+		WorkspacePaper.objects.filter(pk=self.link.pk).update(tracked_at=started)
+
+		with self.captureOnCommitCallbacks(execute=True):
+			self.client.patch(self.detail_url(self.paper), {"tracked": True})
+
+		self.link.refresh_from_db()
+		self.assertEqual(self.link.tracked_at, started)
+		self.citation_check.assert_not_called()
+
+	def test_untracking_clears_the_time(self):
+		WorkspacePaper.objects.filter(pk=self.link.pk).update(tracked_at=timezone.now())
+
+		response = self.client.patch(self.detail_url(self.paper), {"tracked": False})
+
+		self.assertFalse(response.data["tracked"])
+		self.link.refresh_from_db()
+		self.assertIsNone(self.link.tracked_at)
+
+	def test_a_paper_can_be_added_already_tracked(self):
+		other = create_paper("2005.11401")
+
+		with self.captureOnCommitCallbacks(execute=True):
+			response = self.client.post(
+				reverse("workspace-paper-list", args=[self.workspace.pk]), {"paper_id": other.pk, "tracked": True},
+			)
+
+		self.assertTrue(response.data["tracked"])
+		self.citation_check.assert_called_once_with(other.pk)
+
+	def test_an_upload_cannot_be_tracked(self):
+		upload = Paper.objects.create(source=PaperSource.UPLOAD, external_id="u", title="Mine", owner=self.user)
+		WorkspacePaper.objects.create(workspace=self.workspace, paper=upload)
+
+		response = self.client.patch(self.detail_url(upload), {"tracked": True})
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertIn("tracked", response.data)
+
+	def test_the_paper_cannot_be_swapped_and_put_is_not_allowed(self):
+		other = create_paper("2005.11401")
+
+		self.client.patch(self.detail_url(self.paper), {"paper_id": other.pk})
+
+		self.link.refresh_from_db()
+		self.assertEqual(self.link.paper, self.paper)
+		self.assertEqual(self.client.put(self.detail_url(self.paper), {"tracked": True}).status_code, 405)
+
+
+class TrackedTopicViewSetTests(APITestCase):
+	@classmethod
+	def setUpTestData(cls):
+		cls.user = User.objects.create_user(email="ada@example.com", password="password")
+		cls.other_user = User.objects.create_user(email="grace@example.com", password="password")
+		cls.workspace = Workspace.objects.create(user=cls.user, name="Retrieval")
+
+	def setUp(self):
+		self.client.force_authenticate(self.user)
+		self.topic_check = self.enterContext(patch.object(views.check_tracked_topic, "delay"))
+
+	def list_url(self, workspace: Workspace | None = None) -> str:
+		return reverse("workspace-topic-list", args=[(workspace or self.workspace).pk])
+
+	def test_tracks_a_topic_and_checks_it_right_away(self):
+		with self.captureOnCommitCallbacks(execute=True):
+			response = self.client.post(self.list_url(), {"query": "  sparse retrieval "})
+
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		topic = TrackedTopic.objects.get()
+		self.assertEqual((topic.workspace, topic.query, response.data["checked_at"]), (self.workspace, "sparse retrieval", None))
+		self.topic_check.assert_called_once_with(topic.pk)
+
+	def test_lists_topics_oldest_first(self):
+		for query in ("first", "second"):
+			TrackedTopic.objects.create(workspace=self.workspace, query=query)
+
+		self.assertEqual([row["query"] for row in self.client.get(self.list_url()).data], ["first", "second"])
+
+	def test_a_repeated_topic_is_a_400_on_query(self):
+		TrackedTopic.objects.create(workspace=self.workspace, query="Sparse retrieval")
+
+		response = self.client.post(self.list_url(), {"query": "sparse retrieval"})
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertIn("query", response.data)
+
+	def test_a_workspace_tracks_a_limited_number_of_topics(self):
+		TrackedTopic.objects.bulk_create(TrackedTopic(workspace=self.workspace, query=f"topic {index}") for index in range(10))
+
+		response = self.client.post(self.list_url(), {"query": "one more"})
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertIn("query", response.data)
+
+	def test_stops_tracking_a_topic(self):
+		topic = TrackedTopic.objects.create(workspace=self.workspace, query="sparse retrieval")
+
+		response = self.client.delete(reverse("workspace-topic-detail", args=[self.workspace.pk, topic.pk]))
+
+		self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+		self.assertFalse(TrackedTopic.objects.exists())
+
+	def test_another_users_workspace_is_a_404(self):
+		theirs = Workspace.objects.create(user=self.other_user, name="Theirs")
+
+		self.assertEqual(self.client.post(self.list_url(theirs), {"query": "x"}).status_code, 404)
+		self.assertEqual(self.client.get(self.list_url(theirs)).status_code, 404)
+
+
+class TrackingUpdateViewSetTests(APITestCase):
+	@classmethod
+	def setUpTestData(cls):
+		cls.user = User.objects.create_user(email="ada@example.com", password="password")
+		cls.other_user = User.objects.create_user(email="grace@example.com", password="password")
+		cls.workspace = Workspace.objects.create(user=cls.user, name="Retrieval")
+		cls.topic = TrackedTopic.objects.create(workspace=cls.workspace, query="sparse retrieval")
+		cls.tracked = create_paper("1706.03762")
+		WorkspacePaper.objects.create(workspace=cls.workspace, paper=cls.tracked, tracked_at=timezone.now())
+
+	def setUp(self):
+		self.client.force_authenticate(self.user)
+
+	def list_url(self, workspace: Workspace | None = None) -> str:
+		return reverse("workspace-update-list", args=[(workspace or self.workspace).pk])
+
+	def update(self, paper: Paper, **reason) -> TrackingUpdate:
+		return TrackingUpdate.objects.create(workspace=self.workspace, paper=paper, **reason)
+
+	def test_lists_updates_newest_first_with_why_each_was_found(self):
+		self.update(create_paper("2610.00001"), topic=self.topic)
+		self.update(create_paper("2610.00002"), cited_paper=self.tracked)
+		self.update(self.tracked)
+
+		rows = self.client.get(self.list_url()).data["results"]
+
+		self.assertEqual([row["kind"] for row in rows], ["new_version", "new_citation", "new_paper"])
+		self.assertEqual(rows[1]["cited_paper"]["id"], str(self.tracked.id))
+		self.assertEqual(rows[2]["topic"]["query"], "sparse retrieval")
+		self.assertEqual([row["in_workspace"] for row in rows], [True, False, False])
+
+	def test_lists_only_this_workspaces_updates(self):
+		theirs = Workspace.objects.create(user=self.other_user, name="Theirs")
+		TrackingUpdate.objects.create(workspace=theirs, paper=self.tracked)
+
+		self.assertEqual(self.client.get(self.list_url()).data["results"], [])
+		self.assertEqual(self.client.get(self.list_url(theirs)).status_code, 404)
+
+	def test_marking_updates_seen_clears_the_unseen_count(self):
+		self.update(create_paper("2610.00001"), topic=self.topic)
+		self.assertEqual(self.client.get(detail_url(self.workspace)).data["unseen_update_count"], 1)
+
+		response = self.client.post(reverse("workspace-update-seen", args=[self.workspace.pk]))
+
+		self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+		workspace = self.client.get(detail_url(self.workspace)).data
+		self.assertEqual(workspace["unseen_update_count"], 0)
+		self.assertIsNotNone(workspace["updates_seen_at"])
+
+	def test_list_query_count_does_not_grow_with_rows(self):
+		self.update(create_paper("0"), topic=self.topic)
+		with CaptureQueriesContext(connection) as one:
+			self.client.get(self.list_url())
+
+		for index in range(1, 5):
+			paper = create_paper(str(index))
+			PaperAuthor.objects.create(paper=paper, author=Author.objects.create(name=f"Author {index}"), order=1)
+			self.update(paper, **({"topic": self.topic} if index % 2 else {"cited_paper": self.tracked}))
+		with CaptureQueriesContext(connection) as five:
+			response = self.client.get(self.list_url())
+
+		self.assertEqual(len(response.data["results"]), 5)
+		self.assertEqual(response.data["results"][0]["paper"]["authors"], ["Author 4"])
+		self.assertEqual(len(five), len(one))
+

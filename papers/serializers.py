@@ -17,7 +17,7 @@ class PaperBasicSerializer(ModelSerializer):
 		fields = [
 			Paper.fields.id, Paper.fields.title, Paper.fields.doi, Paper.fields.venue, Paper.fields.citation_count,
 			Paper.fields.publication_date, Paper.fields.publication_date_precision, Paper.fields.url,
-			Paper.fields.pdf_url, PaperLookup.is_private.value,
+			Paper.fields.pdf_url, Paper.fields.revised_at, PaperLookup.is_private.value,
 		]
 		read_only_fields = fields
 
