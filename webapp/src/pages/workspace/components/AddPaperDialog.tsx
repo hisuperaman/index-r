@@ -1,7 +1,9 @@
 import {useRef, useState} from "react";
 import {CheckIcon, PlusIcon, SearchIcon} from "lucide-react";
 import type {AxiosError} from "axios";
-import {ConfirmDialog} from "@/components";
+import {ConfirmDialog, PrivateBadge} from "@/components";
+import {Tabs, TabsContent, TabsList, TabsTrigger} from "@/components/ui/tabs";
+import {UploadPaperForm} from "./UploadPaperForm.tsx";
 import {Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle} from "@/components/ui/dialog";
 import {Button} from "@/components/ui/button";
 import {InputGroup, InputGroupAddon, InputGroupInput} from "@/components/ui/input-group";
@@ -84,6 +86,7 @@ export const AddPaperDialog = ({workspaceId, open, onOpenChange, paperIds}: AddP
                         <li key={paper.id} className="flex items-center gap-3 rounded-xl border p-3">
                             <div className="min-w-0 flex-1">
                                 <p className="line-clamp-2 text-sm leading-snug font-medium">{paper.title}</p>
+                                {paper.is_private && <PrivateBadge className="mt-1.5"/>}
                                 {meta && <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{meta}</p>}
                             </div>
                             <Button
@@ -112,22 +115,33 @@ export const AddPaperDialog = ({workspaceId, open, onOpenChange, paperIds}: AddP
             <DialogContent className="gap-4 sm:max-w-xl">
                 <DialogHeader>
                     <DialogTitle>Add papers</DialogTitle>
-                    <DialogDescription>Search for papers to add to this workspace.</DialogDescription>
+                    <DialogDescription>Search for papers, or upload your own PDF.</DialogDescription>
                 </DialogHeader>
-                <InputGroup>
-                    <InputGroupInput
-                        autoFocus
-                        value={search}
-                        onChange={(event) => setSearch(event.target.value)}
-                        placeholder="e.g. Attention Is All You Need"
-                        aria-label="Search papers"
-                    />
-                    <InputGroupAddon><SearchIcon/></InputGroupAddon>
-                    {results.isFetching && query.length >= MIN_PAPER_SEARCH_LENGTH && (
-                        <InputGroupAddon align="inline-end"><Spinner/></InputGroupAddon>
-                    )}
-                </InputGroup>
-                <ScrollArea className="-mx-1 max-h-[min(24rem,60vh)]">{body()}</ScrollArea>
+                <Tabs defaultValue="search" className="gap-4">
+                    <TabsList className="w-full">
+                        <TabsTrigger value="search" className="flex-1">Search</TabsTrigger>
+                        <TabsTrigger value="upload" className="flex-1">Upload PDF</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="search" className="space-y-4">
+                        <InputGroup>
+                            <InputGroupInput
+                                autoFocus
+                                value={search}
+                                onChange={(event) => setSearch(event.target.value)}
+                                placeholder="e.g. Attention Is All You Need"
+                                aria-label="Search papers"
+                            />
+                            <InputGroupAddon><SearchIcon/></InputGroupAddon>
+                            {results.isFetching && query.length >= MIN_PAPER_SEARCH_LENGTH && (
+                                <InputGroupAddon align="inline-end"><Spinner/></InputGroupAddon>
+                            )}
+                        </InputGroup>
+                        <ScrollArea className="-mx-1 max-h-[min(24rem,60vh)]">{body()}</ScrollArea>
+                    </TabsContent>
+                    <TabsContent value="upload">
+                        <UploadPaperForm workspaceId={workspaceId} onUploaded={() => onOpenChangeAndReset(false)}/>
+                    </TabsContent>
+                </Tabs>
                 <ConfirmDialog
                     open={!!confirming}
                     onOpenChange={(next) => !next && setConfirming(null)}

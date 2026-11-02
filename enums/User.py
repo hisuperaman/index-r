@@ -26,3 +26,16 @@ class UserField(FieldEnum):
 	date_joined = 'date_joined'
 	groups = 'groups'
 	user_permissions = 'user_permissions'
+	has_usable_password = 'has_usable_password'
+
+
+class EmailAddressField(FieldEnum):
+	user = 'user'
+	email = 'email'
+
+
+class SocialAccountField(FieldEnum):
+	id = 'id'
+	provider = 'provider'
+	date_joined = 'date_joined'
+	extra_data = 'extra_data'

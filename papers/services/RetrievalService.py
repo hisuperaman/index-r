@@ -32,8 +32,8 @@ class RetrievalService:
 			cls, question: str, queries: list[str], chunks: QuerySet[Chunk] | None = None,
 			top_k: int = RerankService.TOP_K,
 	) -> Retrieval:
-		"""Searches `chunks` (all by default) with `queries`, reranks the best against `question` and keeps the `top_k`."""
-		chunks = Chunk.objects.all() if chunks is None else chunks
+		"""Searches `chunks` (the shared corpus by default) with `queries`, reranks the best and keeps the `top_k`."""
+		chunks = Chunk.objects.public() if chunks is None else chunks
 		candidates = list(chunks.search(*queries).select_related(Chunk.fields.paper)[:cls.CANDIDATES])
 		passages = RerankService.rerank(question, candidates[:cls.RERANK_CANDIDATES], top_k)
 		return Retrieval(passages=passages, candidate_count=len(candidates))

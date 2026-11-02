@@ -18,7 +18,7 @@ class PaperStoreService:
 	def store_one(cls, fetched: FetchedPaper) -> Paper:
 		"""Returns the stored Paper for `fetched`, creating it and its authors if it is new."""
 		doi = fetched.doi.lower() if fetched.doi else None
-		paper = Paper.objects.matching(fetched.source, fetched.external_id, doi).first()
+		paper = Paper.objects.public().matching(fetched.source, fetched.external_id, doi).first()
 		if paper is not None:
 			return cls.refresh(paper, fetched)
 
@@ -42,7 +42,7 @@ class PaperStoreService:
 			return paper
 		except IntegrityError:
 			# A concurrent store saved the same paper between the lookup and the insert.
-			paper = Paper.objects.matching(fetched.source, fetched.external_id, doi).first()
+			paper = Paper.objects.public().matching(fetched.source, fetched.external_id, doi).first()
 			if paper is None:
 				raise
 			return cls.refresh(paper, fetched)

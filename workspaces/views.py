@@ -15,7 +15,8 @@ from rest_framework.response import Response
 from rest_framework.utils.encoders import JSONEncoder
 from rest_framework.viewsets import GenericViewSet, ModelViewSet
 
-from enums.Workspace import MessageRole
+from enums.Paper import PaperLookup
+from enums.Workspace import MessageCitationLookup, MessageRole, WorkspaceLookup, WorkspacePaperLookup
 from iam.mixins import UserScopedMixin
 from iam.permissions import IsOwner
 from papers.models import PaperAuthor
@@ -40,13 +41,16 @@ class WorkspaceViewSet(UserScopedMixin, ModelViewSet):
 	filter_backends = [SearchFilter, OrderingFilter]
 	search_fields = [Workspace.fields.name]
 	ordering_fields = [Workspace.fields.name, Workspace.fields.created_at, Workspace.fields.updated_at]
-	ordering = ['-_last_activity_at']
+	ordering = [WorkspaceLookup.last_activity_at.desc()]
 
 
 class WorkspacePaperViewSet(WorkspaceScopedMixin, ListModelMixin, CreateModelMixin, DestroyModelMixin, GenericViewSet):
 	"""Lists, adds and removes the papers in one of the caller's workspaces."""
 	queryset = WorkspacePaper.objects.select_related(WorkspacePaper.fields.paper).prefetch_related(
-		Prefetch('paper__paper_authors', queryset=PaperAuthor.objects.select_related('author')),
+		Prefetch(
+			WorkspacePaperLookup.paper__paper_authors.value,
+			queryset=PaperAuthor.objects.select_related(PaperAuthor.fields.author),
+		),
 	)
 	serializer_class = WorkspacePaperSerializer
 	lookup_field = WorkspacePaper.fields.paper
@@ -60,7 +64,7 @@ class WorkspacePaperViewSet(WorkspaceScopedMixin, ListModelMixin, CreateModelMix
 class MentionedPaperViewSet(WorkspaceScopedMixin, ListModelMixin, GenericViewSet):
 	"""Lists the papers cited by answers in one of the caller's workspaces, most recently cited first."""
 	serializer_class = MentionedPaperSerializer
-	ordering = ['-_last_mentioned_at']
+	ordering = [PaperLookup.last_mentioned_at.desc()]
 
 	def get_queryset(self):
 		return self.workspace.mentioned_papers()
@@ -71,7 +75,7 @@ class MessageViewSet(WorkspaceScopedMixin, ListModelMixin, CreateModelMixin, Gen
 	"""Lists the chat in one of the caller's workspaces and answers the questions posted to it."""
 	queryset = Message.objects.prefetch_related(Prefetch(
 		Message.fields.citations,
-		queryset=MessageCitation.objects.select_related(f'{MessageCitation.fields.chunk}__paper'),
+		queryset=MessageCitation.objects.select_related(MessageCitationLookup.chunk__paper.value),
 	))
 	serializer_class = MessageSerializer
 	ordering_fields = [Message.fields.created_at]

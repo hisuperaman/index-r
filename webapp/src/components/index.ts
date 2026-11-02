@@ -8,3 +8,4 @@ export * from './Logo.tsx';
 export * from './AppHeader.tsx';
 export * from './UserMenu.tsx';
 export * from './ConfirmDialog.tsx';
+export * from './PrivateBadge.tsx';

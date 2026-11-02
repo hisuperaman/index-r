@@ -5,7 +5,7 @@ from dj_rest_auth.registration.serializers import RegisterSerializer
 from rest_framework.fields import BooleanField, CharField
 from rest_framework.serializers import ModelSerializer
 
-from enums.User import UserField
+from enums.User import EmailAddressField, SocialAccountField, UserField
 from iam.models import User
 
 
@@ -23,7 +23,7 @@ class CustomRegisterSerializer(RegisterSerializer):
 	def validate_email(self, email):
 		email = super().validate_email(email)
 		# delete old unverified User to avoid IntegrityError due to duplicate email
-		email_obj: EmailAddress = EmailAddress.objects.filter(email=email).select_related("user").first()
+		email_obj: EmailAddress = EmailAddress.objects.filter(email=email).select_related(EmailAddressField.user.value).first()
 		if email_obj and not email_obj.verified:
 			email_obj.user.delete()
 
@@ -43,7 +43,7 @@ class CustomRegisterSerializer(RegisterSerializer):
 
 
 class UserSerializer(ModelSerializer):
-	has_password = BooleanField(source='has_usable_password', read_only=True)
+	has_password = BooleanField(source=UserField.has_usable_password.value, read_only=True)
 
 	class Meta:
 		model = User
@@ -63,9 +63,11 @@ class PasswordChangeSerializer(_PasswordChangeSerializer):
 
 
 class SocialAccountSerializer(ModelSerializer):
-	email = CharField(source='extra_data.email', read_only=True, default=None)
+	email = CharField(source=f'{SocialAccountField.extra_data.value}.email', read_only=True, default=None)
 
 	class Meta:
 		model = SocialAccount
-		read_only_fields = ['id', 'provider', 'email', 'date_joined']
+		read_only_fields = [
+			SocialAccountField.id.value, SocialAccountField.provider.value, 'email', SocialAccountField.date_joined.value,
+		]
 		fields = read_only_fields

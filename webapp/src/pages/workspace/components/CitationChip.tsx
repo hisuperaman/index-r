@@ -2,6 +2,7 @@ import {ExternalLinkIcon, FileTextIcon} from "lucide-react";
 import {Popover, PopoverContent, PopoverTrigger} from "@/components/ui/popover";
 import {Button} from "@/components/ui/button";
 import {Separator} from "@/components/ui/separator";
+import {PrivateBadge} from "@/components";
 import type {MessageCitation} from "@/models";
 import {formatChunkLocation, formatPaperMeta} from "@/utils";
 import {cn} from "@/lib/utils.ts";
@@ -46,22 +47,25 @@ export const CitationChip = ({number, citation}: CitationChipProps) => {
                         <span>{formatChunkLocation(chunk)}</span>
                     </div>
                     <p className="text-sm leading-snug font-medium">{chunk.paper.title}</p>
+                    {chunk.paper.is_private && <PrivateBadge/>}
                     {meta && <p className="text-xs text-muted-foreground">{meta}</p>}
                 </div>
                 <blockquote
                     className="mx-4 max-h-64 overflow-y-auto border-l-2 pr-1 pl-3 text-xs leading-relaxed whitespace-pre-line text-muted-foreground">
                     {chunk.text}
                 </blockquote>
-                <Separator/>
-                <div className="flex gap-2 px-4 pb-3">
-                    <Button
-                        size="xs"
-                        variant="outline"
-                        nativeButton={false}
-                        render={<a href={chunk.paper.url} target="_blank" rel="noreferrer"/>}
-                    >
-                        <ExternalLinkIcon data-icon="inline-start"/> Open paper
-                    </Button>
+                {(chunk.paper.url || chunk.paper.pdf_url) && <Separator/>}
+                <div className="flex gap-2 px-4 pb-3 empty:hidden">
+                    {chunk.paper.url && (
+                        <Button
+                            size="xs"
+                            variant="outline"
+                            nativeButton={false}
+                            render={<a href={chunk.paper.url} target="_blank" rel="noreferrer"/>}
+                        >
+                            <ExternalLinkIcon data-icon="inline-start"/> Open paper
+                        </Button>
+                    )}
                     {chunk.paper.pdf_url && (
                         <Button
                             size="xs"

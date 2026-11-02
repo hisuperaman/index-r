@@ -4,6 +4,7 @@ from django.utils import timezone
 
 from enums.Paper import IngestionStatus, PaperSource
 from papers.definitions import ExtractedChunk
+from iam.models import User
 from papers.models import Author, Chunk, Citation, Paper, PaperAuthor
 
 
@@ -143,3 +144,44 @@ class PaperAuthorNamesTests(TestCase):
 			PaperAuthor.objects.create(paper=paper, author=Author.objects.create(name=name), order=order)
 
 		self.assertEqual(paper.author_names, ["Ashish Vaswani", "Noam Shazeer"])
+
+
+class PaperOwnershipTests(TestCase):
+	@classmethod
+	def setUpTestData(cls):
+		cls.user = User.objects.create_user(email="ada@example.com", password="password")
+
+	def test_an_upload_must_have_an_owner(self):
+		with self.assertRaises(IntegrityError):
+			Paper.objects.create(source=PaperSource.UPLOAD, external_id="u1", title="Mine")
+
+	def test_only_uploads_can_have_an_owner(self):
+		with self.assertRaises(IntegrityError):
+			Paper.objects.create(source=PaperSource.ARXIV, external_id="1", title="A", url="https://a.b", owner=self.user)
+
+	def public_paper(self, external_id: str, doi: str) -> Paper:
+		return Paper.objects.create(
+			source=PaperSource.ARXIV, external_id=external_id, title="A", url="https://a.b", doi=doi,
+		)
+
+	def test_a_private_copy_can_share_a_public_papers_doi(self):
+		self.public_paper("1", "10.1/x")
+		Paper.objects.create(source=PaperSource.UPLOAD, external_id="u1", title="Mine", owner=self.user, doi="10.1/x")
+
+		self.assertEqual(Paper.objects.filter(doi="10.1/x").count(), 2)
+
+	def test_public_papers_cannot_share_a_doi(self):
+		self.public_paper("1", "10.1/x")
+
+		with self.assertRaises(IntegrityError):
+			self.public_paper("2", "10.1/x")
+
+	def test_an_owner_uploads_a_file_once(self):
+		Paper.objects.create(source=PaperSource.UPLOAD, external_id="u1", title="A", owner=self.user, content_hash="abc")
+
+		with self.assertRaises(IntegrityError):
+			Paper.objects.create(source=PaperSource.UPLOAD, external_id="u2", title="A", owner=self.user, content_hash="abc")
+
+	def test_is_private_follows_the_owner(self):
+		self.assertFalse(create_paper("1").is_private)
+		self.assertTrue(Paper(owner=self.user).is_private)

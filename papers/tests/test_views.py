@@ -1,6 +1,9 @@
 from datetime import date
+from io import BytesIO
 from unittest.mock import patch
 
+import pymupdf
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
@@ -10,6 +13,7 @@ from rest_framework.test import APITestCase
 from enums.Paper import DatePrecision, PaperSource
 from iam.models import User
 from papers.models import Author, Chunk, Paper, PaperAuthor
+from papers.services import PdfDownloadService
 from papers.views import ChunkSearchView
 
 URL = reverse("chunk-search")
@@ -198,3 +202,92 @@ class PaperViewSetTests(APITestCase):
 		self.client.force_authenticate(None)
 
 		self.assertEqual(self.list().status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class PaperPrivacyAndUploadTests(APITestCase):
+	@classmethod
+	def setUpTestData(cls):
+		cls.me = User.objects.create_user(email="ada@example.com", password="password")
+		cls.someone = User.objects.create_user(email="grace@example.com", password="password")
+		cls.public = Paper.objects.create(
+			source=PaperSource.ARXIV, external_id="1", title="Public attention", url="https://arxiv.org/abs/1",
+		)
+		cls.mine = Paper.objects.create(source=PaperSource.UPLOAD, external_id="u1", title="My attention notes", owner=cls.me)
+		cls.theirs = Paper.objects.create(
+			source=PaperSource.UPLOAD, external_id="u2", title="Their attention notes", owner=cls.someone,
+		)
+		for paper in (cls.public, cls.mine, cls.theirs):
+			Chunk.objects.create(paper=paper, heading="Attention", text="Attention heads.", start_page=1, end_page=1,
+								 chunk_index=0)
+
+	def setUp(self):
+		self.client.force_authenticate(self.me)
+
+	def test_search_shows_the_corpus_and_my_uploads_only(self):
+		rows = self.client.get(reverse("paper-list"), {"search": "attention"}).data["results"]
+
+		self.assertEqual({row["id"] for row in rows}, {str(self.public.id), str(self.mine.id)})
+		self.assertEqual({row["id"]: row["is_private"] for row in rows}[str(self.mine.id)], True)
+
+	def test_another_users_upload_is_not_found(self):
+		response = self.client.get(reverse("paper-detail", args=[self.theirs.pk]))
+
+		self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+	def test_chunk_search_never_returns_another_users_upload(self):
+		rows = self.client.get(reverse("chunk-search"), {"q": "attention"}).data
+
+		self.assertEqual({row["paper"]["id"] for row in rows}, {str(self.public.id), str(self.mine.id)})
+
+	def upload(self, content: bytes, name: str = "draft.pdf", **data):
+		return self.client.post(
+			reverse("paper-list"), {"file": SimpleUploadedFile(name, content, "application/pdf"), **data}, format="multipart",
+		)
+
+	def test_uploads_a_private_paper(self):
+		document = pymupdf.open()
+		page = document.new_page()
+		page.insert_text((72, 80), "Notes on Sparse Attention", fontsize=20, fontname="hebo")
+		page.insert_text((72, 120), "Sparse attention scales linearly.", fontsize=10)
+		buffer = BytesIO()
+		document.save(buffer)
+
+		response = self.upload(buffer.getvalue(), title="My notes")
+
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		self.assertEqual((response.data["title"], response.data["is_private"]), ("My notes", True))
+		self.assertNotIn("file", response.data)
+		paper = Paper.objects.get(pk=response.data["id"])
+		self.assertEqual(paper.owner, self.me)
+		self.assertTrue(paper.chunks.exists())
+
+	def test_rejects_a_file_that_is_not_a_pdf(self):
+		response = self.upload(b"<html>nope</html>", name="page.pdf")
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertIn("file", response.data)
+
+	def test_rejects_a_file_over_the_limit(self):
+		with patch.object(PdfDownloadService, "MAX_BYTES", 10):
+			response = self.upload(b"%PDF-1.7 " + b"x" * 20)
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertIn("file", response.data)
+
+	def test_a_pdf_without_text_is_a_400_on_file(self):
+		buffer = BytesIO()
+		document = pymupdf.open()
+		document.new_page()
+		document.save(buffer)
+
+		response = self.upload(buffer.getvalue())
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertIn("couldn't find any text", response.data["file"][0])
+		self.assertFalse(Paper.objects.filter(owner=self.me).exclude(pk=self.mine.pk).exists())
+
+	def test_requires_a_file(self):
+		response = self.client.post(reverse("paper-list"), {"title": "Nothing"}, format="multipart")
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertIn("file", response.data)

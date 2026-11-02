@@ -1,4 +1,5 @@
 import type {ComponentProps, ReactNode} from "react";
+import {PrivateBadge} from "@/components";
 import {Button} from "@/components/ui/button";
 import {Tooltip, TooltipContent, TooltipTrigger} from "@/components/ui/tooltip";
 import type {Paper} from "@/models";
@@ -24,14 +25,19 @@ export const PaperCard = ({paper, detail, actions}: PaperCardProps) => {
 
     return (
         <li className="group rounded-2xl border bg-card p-3.5 transition-colors hover:bg-muted/40">
-            <a
-                href={paper.url}
-                target="_blank"
-                rel="noreferrer"
-                className="line-clamp-2 text-sm leading-snug font-medium underline-offset-4 hover:underline"
-            >
-                {paper.title}
-            </a>
+            {paper.url ? (
+                <a
+                    href={paper.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="line-clamp-2 text-sm leading-snug font-medium underline-offset-4 hover:underline"
+                >
+                    {paper.title}
+                </a>
+            ) : (
+                <p className="line-clamp-2 text-sm leading-snug font-medium">{paper.title}</p>
+            )}
+            {paper.is_private && <PrivateBadge className="mt-1.5"/>}
             {authors && <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">{authors}</p>}
             {meta && <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{meta}</p>}
             <div className="mt-2 flex min-h-7 items-center gap-1">

@@ -4,6 +4,7 @@ from unittest.mock import patch
 from django.test import TestCase
 
 from enums.Paper import DatePrecision, PaperSource
+from iam.models import User
 from papers.models import Author, Paper
 from papers import tasks
 from papers.services import PaperStoreService
@@ -129,3 +130,19 @@ class PaperStoreIngestionQueueTests(TestCase):
 		_, delay = self.store(fetched_paper(pdf_url="https://arxiv.org/pdf/1706.03762"))
 
 		delay.assert_not_called()
+
+
+class PaperStorePrivacyTests(TestCase):
+
+	def test_a_fetched_paper_never_matches_a_private_upload(self):
+		user = User.objects.create_user(email="ada@example.com", password="password")
+		private = Paper.objects.create(
+			source=PaperSource.UPLOAD, external_id="u1", title="Private copy", owner=user, doi="10.48550/arxiv.1706.03762",
+		)
+
+		paper = PaperStoreService.store_one(fetched_paper())
+
+		self.assertNotEqual(paper, private)
+		self.assertFalse(paper.is_private)
+		private.refresh_from_db()
+		self.assertEqual(private.title, "Private copy")

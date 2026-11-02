@@ -241,6 +241,25 @@ class WorkspacePaperViewSetTests(APITestCase):
 
 		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
+	def test_cannot_add_another_users_private_paper(self):
+		theirs = Paper.objects.create(
+			source=PaperSource.UPLOAD, external_id="u2", title="Their notes", owner=self.other_user,
+		)
+
+		response = self.client.post(self.list_url(), {"paper_id": theirs.pk})
+
+		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+		self.assertIn("paper_id", response.data)
+		self.assertFalse(WorkspacePaper.objects.exists())
+
+	def test_adds_my_own_private_paper(self):
+		mine = Paper.objects.create(source=PaperSource.UPLOAD, external_id="u1", title="My notes", owner=self.user)
+
+		response = self.client.post(self.list_url(), {"paper_id": mine.pk})
+
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		self.assertTrue(response.data["paper"]["is_private"])
+
 	def test_an_unknown_paper_is_a_400_on_paper_id(self):
 		response = self.client.post(self.list_url(), {"paper_id": "00000000-0000-0000-0000-000000000000"})
 

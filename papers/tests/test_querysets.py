@@ -4,6 +4,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from enums.Paper import DatePrecision, PaperSource
+from iam.models import User
 from papers.models import Author, Chunk, Paper
 
 
@@ -185,3 +186,27 @@ class ChunkFilterPapersTests(TestCase):
 	def test_min_citations_is_inclusive_and_drops_unknown_counts(self):
 		self.assertEqual(self.filtered(min_citations=10), [self.neurips_2017, self.acl_2019])
 		self.assertEqual(self.filtered(min_citations=11), [self.neurips_2017])
+
+
+class VisibilityTests(TestCase):
+	@classmethod
+	def setUpTestData(cls):
+		cls.me = User.objects.create_user(email="ada@example.com", password="password")
+		cls.someone = User.objects.create_user(email="grace@example.com", password="password")
+		cls.public = create_paper("1")
+		cls.mine = Paper.objects.create(source=PaperSource.UPLOAD, external_id="u1", title="Mine", owner=cls.me)
+		cls.theirs = Paper.objects.create(source=PaperSource.UPLOAD, external_id="u2", title="Theirs", owner=cls.someone)
+		cls.chunks = {
+			paper: Chunk.objects.create(paper=paper, text="Text.", start_page=1, end_page=1, chunk_index=0)
+			for paper in (cls.public, cls.mine, cls.theirs)
+		}
+
+	def test_public_papers_and_chunks_exclude_every_upload(self):
+		self.assertQuerySetEqual(Paper.objects.public(), [self.public])
+		self.assertQuerySetEqual(Chunk.objects.public(), [self.chunks[self.public]])
+
+	def test_a_user_sees_the_corpus_and_their_own_uploads(self):
+		self.assertQuerySetEqual(Paper.objects.visible_to(self.me), [self.public, self.mine], ordered=False)
+		self.assertQuerySetEqual(
+			Chunk.objects.visible_to(self.me), [self.chunks[self.public], self.chunks[self.mine]], ordered=False,
+		)
