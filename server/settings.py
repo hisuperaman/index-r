@@ -16,6 +16,8 @@ from os.path import join
 from pathlib import Path
 from sys import modules
 
+from celery.schedules import crontab
+
 from config import env
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -218,6 +220,16 @@ REDIS_PORT = env.int('REDIS_PORT', default=6379)
 
 CELERY_BROKER_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/0"
 CELERY_TASK_DEFAULT_QUEUE = 'default'
+CELERY_BEAT_SCHEDULE = {
+	'check-tracking': {
+		'task': 'workspaces.tasks.check_tracking',
+		'schedule': crontab(hour=env.int('TRACKING_CHECK_HOUR', default=6), minute=0),
+	},
+	'requeue-stale-ingestions': {
+		'task': 'papers.tasks.requeue_stale_ingestions',
+		'schedule': crontab(minute=30),
+	},
+}
 
 # LLM, as '<provider>:<model>' (e.g. 'anthropic:claude-sonnet-5-5'); the provider reads its own API key from the env
 LLM = env('LLM', default=None)
@@ -240,6 +252,13 @@ DISCOVERY_MAX_PAPERS = 10
 MCP_PUBLIC_URL = env('MCP_PUBLIC_URL', default='http://localhost:8100/mcp')
 MCP_HOST = env('MCP_HOST', default='127.0.0.1')
 MCP_PORT = env.int('MCP_PORT', default=8100)
+
+# Live tracking (the daily check runs at TRACKING_CHECK_HOUR UTC, see CELERY_BEAT_SCHEDULE): a new topic first looks
+# back this many days, and each tracked paper reports at most this many new citing papers per check
+TRACKING_LOOKBACK_DAYS = 30
+TRACKING_MAX_CITATIONS = 10
+# A paper still waiting for ingestion after this long is queued again
+INGESTION_STALE_MINUTES = 60
 
 # How long an ask waits for newly discovered papers to be ingested before answering without them
 INGESTION_WAIT_SECONDS = 60

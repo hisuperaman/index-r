@@ -1,17 +1,25 @@
 from typing import Any
 
 from django.core.exceptions import ValidationError as DjangoValidationError
+from functools import partial
+
+from django.db import transaction
 from django.db.models import Prefetch
 from rest_framework.serializers import Serializer
 
-from enums.Workspace import MessageCitationLookup, MessageRole, WorkspaceLookup, WorkspacePaperLookup
+from enums.Workspace import (
+	MessageCitationLookup, MessageRole, WorkspaceLookup, WorkspacePaperLookup,
+)
 from iam.models import User
 from iam.scoping import scope_to_user
 from integrations.exceptions import ToolInputError
 from papers.models import Chunk, Paper, PaperAuthor
 from papers.serializers import ChunkSerializer, PaperSerializer
-from workspaces.models import Message, MessageCitation, Workspace, WorkspacePaper
-from workspaces.serializers import MessageSerializer, WorkspacePaperSerializer, WorkspaceSerializer
+from workspaces.models import Message, MessageCitation, TrackedTopic, TrackingUpdate, Workspace, WorkspacePaper
+from workspaces.serializers import (
+	MessageSerializer, TrackedTopicSerializer, TrackingUpdateSerializer, WorkspacePaperSerializer, WorkspaceSerializer,
+)
+from workspaces.tasks import check_tracked_topic
 
 
 def first_error(serializer: Serializer) -> str:
@@ -130,6 +138,41 @@ class ResearchToolsService:
 		if not deleted:
 			raise ToolInputError("That paper isn't in this workspace.")
 		return {'removed': True}
+
+	@classmethod
+	def track_topic(cls, user_id: int, workspace_id: str, query: str) -> dict[str, Any]:
+		"""Starts tracking a topic in one of the user's workspaces and queues its first check."""
+		workspace = cls.workspace(cls.user(user_id), workspace_id)
+		serializer = TrackedTopicSerializer(data={TrackedTopic.fields.query: query}, workspace=workspace)
+		if not serializer.is_valid():
+			raise ToolInputError(first_error(serializer))
+		topic = serializer.save(workspace=workspace)
+		transaction.on_commit(partial(check_tracked_topic.delay, topic.pk), robust=True)
+		return TrackedTopicSerializer(topic).data
+
+	@classmethod
+	def untrack_topic(cls, user_id: int, workspace_id: str, query: str) -> dict[str, Any]:
+		"""Stops tracking a topic in one of the user's workspaces."""
+		workspace = cls.workspace(cls.user(user_id), workspace_id)
+		deleted, _ = TrackedTopic.objects.filter(workspace=workspace, query__iexact=query.strip()).delete()
+		if not deleted:
+			raise ToolInputError("This workspace doesn't track that topic. Use list_updates to see its topics.")
+		return {'untracked': True}
+
+	@classmethod
+	def list_updates(cls, user_id: int, workspace_id: str, unseen_only: bool = False) -> dict[str, Any]:
+		"""What tracking found in one of the user's workspaces, newest first, with the topics it tracks."""
+		workspace = cls.workspace(cls.user(user_id), workspace_id)
+		updates = TrackingUpdate.objects.filter(workspace=workspace).with_details()
+		if unseen_only:
+			updates = updates.unseen()
+		return {
+			'topics': TrackedTopicSerializer(workspace.tracked_topics.order_by(TrackedTopic.fields.created_at), many=True).data,
+			'updates_seen_at': workspace.updates_seen_at,
+			'updates': TrackingUpdateSerializer(
+				updates.order_by(TrackingUpdate.fields.created_at.desc())[:cls.LIST_LIMIT], many=True,
+			).data,
+		}
 
 	@classmethod
 	def start_question(cls, user_id: int, workspace_id: str, question: str) -> Message:

@@ -1,3 +1,8 @@
+from datetime import date
+
+from django.utils import timezone
+from requests import HTTPError
+
 from enums.Paper import PaperSource
 from papers.services.fetchers.BaseFetcherService import BaseFetcherService
 from papers.services.fetchers.definitions import FetchedAuthor, FetchedPaper
@@ -10,16 +15,49 @@ class OpenAlexFetcherService(BaseFetcherService):
 	BASE_URL = "https://api.openalex.org/works"
 	MAX_LIMIT = 200
 
+	PREFIX = "https://openalex.org/"
+
 	@classmethod
-	def search(cls, query: str, limit: int) -> list[FetchedPaper]:
-		response = cls.get({"search": query, "per-page": cls.clamp_limit(limit)})
-		papers = [cls.parse_work(work) for work in response.json().get("results", [])]
+	def search(cls, query: str, limit: int, since: date | None = None) -> list[FetchedPaper]:
+		params = {"search": query, "per-page": cls.clamp_limit(limit)}
+		if since:
+			params |= {"filter": cls.published_since(since), "sort": "publication_date:desc"}
+		return cls.parse_works(cls.get(params).json())
+
+	@classmethod
+	def citing(cls, work_id: str, since: date, limit: int) -> list[FetchedPaper]:
+		"""The newest papers citing the work `work_id`, published since `since`."""
+		return cls.parse_works(cls.get({
+			"filter": f"cites:{work_id},{cls.published_since(since)}",
+			"sort": "publication_date:desc",
+			"per-page": cls.clamp_limit(limit),
+		}).json())
+
+	@classmethod
+	def work_id(cls, doi: str) -> str | None:
+		"""The OpenAlex ID of the work with this DOI, or None if OpenAlex doesn't have it."""
+		try:
+			response = cls.get({"select": "id"}, path=f"/doi:{doi}")
+		except HTTPError as error:
+			if error.response is not None and error.response.status_code == 404:
+				return None
+			raise
+		return cls.strip_prefix(response.json().get("id"), cls.PREFIX)
+
+	@staticmethod
+	def published_since(since: date) -> str:
+		"""The filter for works published from `since` to today; OpenAlex also lists future-dated works."""
+		return f"from_publication_date:{since.isoformat()},to_publication_date:{timezone.localdate().isoformat()}"
+
+	@classmethod
+	def parse_works(cls, data: dict) -> list[FetchedPaper]:
+		papers = [cls.parse_work(work) for work in data.get("results", [])]
 		return [paper for paper in papers if paper]
 
 	@classmethod
 	def parse_work(cls, work: dict) -> FetchedPaper | None:
 		"""Maps one OpenAlex work to a FetchedPaper, or None if it has no id or title."""
-		external_id = cls.strip_prefix(work.get("id"), "https://openalex.org/")
+		external_id = cls.strip_prefix(work.get("id"), cls.PREFIX)
 		title = cls.clean(work.get("title") or work.get("display_name"))
 		if not external_id or not title:
 			return None

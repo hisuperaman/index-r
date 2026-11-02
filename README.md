@@ -46,6 +46,8 @@ SEMANTIC_SCHOLAR_API_KEY=
 MCP_PUBLIC_URL=http://localhost:8100/mcp
 MCP_HOST=127.0.0.1
 MCP_PORT=8100
+# Hour (UTC) of the daily live-tracking check
+TRACKING_CHECK_HOUR=6
 ```
 
 4. Apply migrations:
@@ -71,6 +73,19 @@ python manage.py runserver
 
 ```bash
 celery -A server worker --queues=default --pool=threads --concurrency=4 --loglevel=INFO
+```
+
+   Also start Celery beat, which runs the daily live-tracking check (at `TRACKING_CHECK_HOUR` UTC, default 6) and
+   requeues papers whose ingestion got stuck:
+
+```bash
+celery -A server beat --loglevel=INFO
+```
+
+   To run the tracking check right away instead of waiting for the schedule:
+
+```bash
+python manage.py check_tracking
 ```
 
 8. Optionally, run the MCP server so AI assistants (Claude Desktop, Claude Code, IDEs) can use IndexR. Create an access

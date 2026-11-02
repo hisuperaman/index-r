@@ -11,7 +11,7 @@ from papers.definitions import ExtractedChunk, ExtractedPaper
 from papers.models import Chunk, Paper
 from papers.exceptions import PdfDownloadError
 from papers.services import PdfDownloadService, TextExtractorService
-from papers.tasks import ingest_paper, queue_ingest_paper
+from papers.tasks import ingest_paper, queue_ingest_paper, requeue_stale_ingestions
 
 PDF_URL = "https://arxiv.org/pdf/1706.03762"
 
@@ -118,3 +118,25 @@ class QueueIngestPaperTests(TestCase):
 
 		_, _, robust = connection.run_on_commit[-1]
 		self.assertTrue(robust)
+
+
+class RequeueStaleIngestionsTests(TestCase):
+
+	def test_requeues_only_papers_left_pending_too_long(self):
+		def paper(external_id, **fields):
+			return Paper.objects.create(
+				source=PaperSource.ARXIV, external_id=external_id, title=external_id, url="https://arxiv.org", **fields,
+			)
+
+		stale = paper("1", pdf_url=PDF_URL)
+		recent = paper("2", pdf_url=PDF_URL)
+		paper("3")
+		paper("4", pdf_url=PDF_URL, ingested_at=timezone.now())
+		paper("5", pdf_url=PDF_URL, ingestion_failed_at=timezone.now())
+		Paper.objects.exclude(pk=recent.pk).update(created_at=timezone.now() - timezone.timedelta(hours=2))
+
+		with patch.object(ingest_paper, "delay") as delay:
+			requeue_stale_ingestions()
+
+		delay.assert_called_once_with(stale.pk)
+

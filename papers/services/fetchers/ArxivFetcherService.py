@@ -1,4 +1,8 @@
+import re
+from datetime import date, datetime
 from xml.etree import ElementTree
+
+from django.utils import timezone
 
 from enums.Paper import PaperSource
 from papers.services.fetchers.BaseFetcherService import BaseFetcherService
@@ -17,14 +21,33 @@ class ArxivFetcherService(BaseFetcherService):
 	}
 	ABS_PREFIX = "http://arxiv.org/abs/"
 
+	ID_BATCH = 100
+	ID_PATTERN = re.compile(r"\d{4}\.\d{4,5}|[a-z-]+(\.[A-Z]{2})?/\d{7}")
+
 	@classmethod
-	def search(cls, query: str, limit: int) -> list[FetchedPaper]:
-		response = cls.get({
-			"search_query": " AND ".join(f"all:{term}" for term in query.split()),
-			"start": 0,
-			"max_results": cls.clamp_limit(limit),
-		})
-		root = ElementTree.fromstring(response.content)
+	def search(cls, query: str, limit: int, since: date | None = None) -> list[FetchedPaper]:
+		terms = [f"all:{term}" for term in query.split()]
+		params = {"start": 0, "max_results": cls.clamp_limit(limit)}
+		if since:
+			terms.append(f"submittedDate:[{since:%Y%m%d}0000 TO {timezone.localdate():%Y%m%d}2359]")
+			params.update(sortBy="submittedDate", sortOrder="descending")
+		return cls.parse_feed(cls.get({**params, "search_query": " AND ".join(terms)}).content)
+
+	@classmethod
+	def revisions(cls, arxiv_ids: list[str]) -> dict[str, datetime]:
+		"""When each of these papers last got a new version, by arXiv ID; IDs arXiv can't have are skipped."""
+		arxiv_ids = [arxiv_id for arxiv_id in arxiv_ids if cls.ID_PATTERN.fullmatch(arxiv_id)]
+		revised = {}
+		for start in range(0, len(arxiv_ids), cls.ID_BATCH):
+			batch = arxiv_ids[start:start + cls.ID_BATCH]
+			response = cls.get({"id_list": ",".join(batch), "max_results": len(batch)})
+			revised |= {paper.external_id: paper.revised_at for paper in cls.parse_feed(response.content) if paper.revised_at}
+		return revised
+
+	@classmethod
+	def parse_feed(cls, content: bytes) -> list[FetchedPaper]:
+		"""The papers in an Atom feed."""
+		root = ElementTree.fromstring(content)
 		papers = [cls.parse_entry(entry) for entry in root.findall("atom:entry", cls.NAMESPACES)]
 		return [paper for paper in papers if paper]
 
@@ -49,6 +72,7 @@ class ArxivFetcherService(BaseFetcherService):
 			publication_date=publication_date,
 			publication_date_precision=precision,
 			pdf_url=pdf_link.get("href") if pdf_link is not None else None,
+			revised_at=cls.parse_datetime(entry.findtext("atom:updated", None, cls.NAMESPACES)),
 			authors=[
 				FetchedAuthor(name=cls.clean(author.findtext("atom:name", "", cls.NAMESPACES)))
 				for author in entry.findall("atom:author", cls.NAMESPACES)

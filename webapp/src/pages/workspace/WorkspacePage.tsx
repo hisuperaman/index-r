@@ -1,6 +1,6 @@
 import {useCallback, useEffect, useState} from "react";
 import {Link, useParams} from "react-router";
-import {ChevronDownIcon, SearchXIcon} from "lucide-react";
+import {ChevronDownIcon, RadarIcon, SearchXIcon} from "lucide-react";
 import {AppHeader, BreadcrumbSlash, ErrorPlaceholder} from "@/components";
 import {Button} from "@/components/ui/button";
 import {Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle} from "@/components/ui/empty";
@@ -8,10 +8,10 @@ import {Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle} from "@/
 import {Skeleton} from "@/components/ui/skeleton";
 import {WorkspaceActions} from "@/components/workspaces";
 import {RoutePaths} from "@/enums";
-import {useMediaQuery} from "@/hooks";
+import {useMediaQuery, useTrackingSheet} from "@/hooks";
 import {useWorkspace} from "@/queries";
 import {Path} from "@/utils";
-import {ChatPanel, PanelToggle, PapersPanel} from "./components";
+import {ChatPanel, PanelToggle, PapersPanel, TrackingSheet} from "./components";
 
 const PANEL_STORAGE_KEY = "indexr-papers-panel";
 
@@ -45,6 +45,7 @@ const WorkspaceView = ({workspaceId}: { workspaceId: string }) => {
     const wide = useMediaQuery("(min-width: 1024px)");
     const [panelOpen, setPanelOpen] = useState(readPanelPreference);
     const [sheetOpen, setSheetOpen] = useState(false);
+    const tracking = useTrackingSheet(workspace.data);
 
     const togglePapers = useCallback(() => {
         if (!wide) return setSheetOpen((open) => !open);
@@ -117,6 +118,17 @@ const WorkspaceView = ({workspaceId}: { workspaceId: string }) => {
                         ) : <Skeleton className="h-5 w-48"/>}
                     </>
                 }
+                actions={workspace.data && (
+                    <Button variant="ghost" size="sm" onClick={tracking.show} aria-label="Tracking and updates">
+                        <RadarIcon data-icon="inline-start"/>
+                        <span className="hidden sm:inline">Tracking</span>
+                        {workspace.data.unseen_update_count > 0 && (
+                            <span className="rounded-full bg-primary px-1.5 text-[0.7rem] font-semibold text-primary-foreground tabular-nums">
+                                {workspace.data.unseen_update_count}
+                            </span>
+                        )}
+                    </Button>
+                )}
             />
 
             <div className="flex min-h-0 flex-1">
@@ -131,9 +143,14 @@ const WorkspaceView = ({workspaceId}: { workspaceId: string }) => {
                         <PanelToggle open={false} onClick={togglePapers}
                                      className="absolute top-3 left-3 z-10 bg-background/80 shadow-sm ring-1 ring-border backdrop-blur"/>
                     )}
-                    {workspace.data ? <ChatPanel workspace={workspace.data}/> : <div className="flex-1"/>}
+                    {workspace.data ? <ChatPanel workspace={workspace.data} onShowUpdates={tracking.show}/> : <div className="flex-1"/>}
                 </div>
             </div>
+
+            {workspace.data && (
+                <TrackingSheet workspace={workspace.data} open={tracking.open} seenBefore={tracking.seenBefore}
+                               onOpenChange={tracking.setOpen}/>
+            )}
 
             {!wide && workspace.data && (
                 <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>

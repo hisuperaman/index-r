@@ -16,12 +16,27 @@ class AskStage(TextChoices):
 	ANSWERING = 'answering', 'Writing the answer'
 
 
+class TrackingUpdateKind(TextChoices):
+	NEW_PAPER = 'new_paper', 'New paper'
+	NEW_CITATION = 'new_citation', 'New citation'
+	NEW_VERSION = 'new_version', 'New version'
+
+
 class WorkspaceLookup(FieldEnum):
 	user__email = 'user__email'
 	last_activity_at = '_last_activity_at'
 
 
 class WorkspacePaperLookup(FieldEnum):
+	paper__paper_authors = 'paper__paper_authors'
+	is_tracked = 'is_tracked'
+
+
+class TrackingUpdateLookup(FieldEnum):
+	kind = 'kind'
+	in_workspace = '_in_workspace'
+	workspace__updates_seen_at = 'workspace__updates_seen_at'
+	workspace__created_at = 'workspace__created_at'
 	paper__paper_authors = 'paper__paper_authors'
 
 

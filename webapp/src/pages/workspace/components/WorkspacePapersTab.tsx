@@ -1,5 +1,5 @@
 import {useId, useRef, useState} from "react";
-import {ExternalLinkIcon, FileTextIcon, LibraryIcon, XIcon} from "lucide-react";
+import {BellIcon, BellRingIcon, ExternalLinkIcon, FileTextIcon, LibraryIcon, XIcon} from "lucide-react";
 import {ConfirmDialog} from "@/components";
 import {Button} from "@/components/ui/button";
 import {Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle} from "@/components/ui/empty";
@@ -10,7 +10,7 @@ import {Switch} from "@/components/ui/switch";
 import {toast} from "@/components/ui/toast";
 import {useOnVisible} from "@/hooks";
 import type {Paper, Workspace} from "@/models";
-import {useRemoveWorkspacePaper, useUpdateWorkspace, useWorkspacePapers} from "@/queries";
+import {useRemoveWorkspacePaper, useTrackPaper, useUpdateWorkspace, useWorkspacePapers} from "@/queries";
 import {cn} from "@/lib/utils.ts";
 import {IconAction, PaperCard} from "./PaperCard.tsx";
 
@@ -48,11 +48,19 @@ const ScopeSwitch = ({workspace}: { workspace: Workspace }) => {
 export const WorkspacePapersTab = ({workspace, onAdd}: { workspace: Workspace; onAdd: () => void }) => {
     const papers = useWorkspacePapers(workspace.id);
     const removePaper = useRemoveWorkspacePaper(workspace.id);
+    const trackPaper = useTrackPaper(workspace.id);
     const [removing, setRemoving] = useState<Paper | null>(null);
     const sentinel = useRef<HTMLDivElement>(null);
     useOnVisible(sentinel, papers.fetchNextPage, papers.hasNextPage && !papers.isFetchingNextPage);
 
     const items = papers.data?.pages.flatMap((page) => page.results) ?? [];
+
+    const toggleTracking = (paper: Paper, tracked: boolean) => trackPaper.mutate({paperId: paper.id, tracked}, {
+        onSuccess: () => toast.add(tracked
+            ? {title: "Tracking this paper", description: "You'll see its new citations and versions in Tracking.", type: "success"}
+            : {title: "Stopped tracking", description: paper.title, type: "success"}),
+        onError: () => toast.add({title: "Couldn't change tracking", description: "Please try again.", type: "error"}),
+    });
 
     const confirmRemove = () => {
         if (!removing) return;
@@ -93,12 +101,26 @@ export const WorkspacePapersTab = ({workspace, onAdd}: { workspace: Workspace; o
                 )}
 
                 <ul className="space-y-2">
-                    {items.map(({paper}) => (
+                    {items.map(({paper, tracked}) => (
                         <PaperCard
                             key={paper.id}
                             paper={paper}
+                            detail={tracked && (
+                                <span className="flex items-center gap-1 text-primary"><BellRingIcon className="size-3"/> Tracking</span>
+                            )}
                             actions={
                                 <>
+                                    {!paper.is_private && (
+                                        <IconAction
+                                            label={tracked ? "Stop tracking" : "Track new citations and versions"}
+                                            aria-pressed={tracked}
+                                            className={cn(tracked && "text-primary")}
+                                            disabled={trackPaper.isPending}
+                                            onClick={() => toggleTracking(paper, !tracked)}
+                                        >
+                                            {tracked ? <BellRingIcon/> : <BellIcon/>}
+                                        </IconAction>
+                                    )}
                                     {paper.pdf_url && (
                                         <IconAction label="Open PDF" nativeButton={false}
                                                     render={<a href={paper.pdf_url} target="_blank" rel="noreferrer"/>}>

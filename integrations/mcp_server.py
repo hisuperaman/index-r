@@ -24,7 +24,7 @@ INSTRUCTIONS = (
 	"IndexR finds research papers and answers questions with citations to the exact section and page. "
 	"Use search_papers to find passages. To get a written, cited answer, pick a workspace with list_workspaces "
 	"(or make one with create_workspace) and call ask; it can take a minute when new papers have to be found. "
-	"Each workspace keeps its questions, answers and papers together."
+	"Each workspace keeps its questions, answers and papers together, and can track topics for new papers."
 )
 ANSWER_FAILED = "Something went wrong while generating the answer. Please try again."
 ASK_STEPS = len(AskStage)
@@ -112,6 +112,33 @@ def register_tools(server: MCPServer) -> None:
 			paper_id: Annotated[str, Field(description="Paper ID")],
 	) -> dict[str, Any]:
 		return await run(ResearchToolsService.remove_paper_from_workspace, workspace_id, paper_id)
+
+	@server.tool(description=(
+			"Track a topic in one of the user's workspaces. Every day IndexR looks for newly published papers on it "
+			"and lists them as updates (see list_updates). The first check runs right away."
+	))
+	async def track_topic(
+			workspace_id: Annotated[str, Field(description="Workspace ID")],
+			query: Annotated[str, Field(description="Search phrase for the topic, e.g. 'retrieval augmented generation'")],
+	) -> dict[str, Any]:
+		return await run(ResearchToolsService.track_topic, workspace_id, query)
+
+	@server.tool(description="Stop tracking a topic in one of the user's workspaces.")
+	async def untrack_topic(
+			workspace_id: Annotated[str, Field(description="Workspace ID")],
+			query: Annotated[str, Field(description="The tracked topic's search phrase")],
+	) -> dict[str, Any]:
+		return await run(ResearchToolsService.untrack_topic, workspace_id, query)
+
+	@server.tool(description=(
+			"List what tracking found in one of the user's workspaces, newest first: new papers on its tracked topics, "
+			"new papers citing its tracked papers, and new arXiv versions. Also returns the tracked topics."
+	))
+	async def list_updates(
+			workspace_id: Annotated[str, Field(description="Workspace ID")],
+			unseen_only: Annotated[bool, Field(description="Only updates the user hasn't seen in IndexR yet")] = False,
+	) -> dict[str, Any]:
+		return await run(ResearchToolsService.list_updates, workspace_id, unseen_only=unseen_only)
 
 	@server.tool(description=(
 			"Ask a research question in one of the user's workspaces. IndexR finds the relevant papers (searching for "

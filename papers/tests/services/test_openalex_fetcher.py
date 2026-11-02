@@ -2,6 +2,7 @@ from datetime import date
 from unittest.mock import Mock, patch
 
 from django.test import SimpleTestCase
+from requests import HTTPError
 
 from enums.Paper import DatePrecision, PaperSource
 from papers.services.fetchers import OpenAlexFetcherService
@@ -63,3 +64,50 @@ class OpenAlexFetcherServiceTests(SimpleTestCase):
 		_, get = self.search([], limit=1000)
 
 		self.assertEqual(get.call_args.kwargs["params"]["per-page"], OpenAlexFetcherService.MAX_LIMIT)
+
+	def test_since_limits_to_works_published_from_that_date_to_today_newest_first(self):
+		response = Mock(json=Mock(return_value={"results": []}))
+		with (
+			patch("papers.services.fetchers.OpenAlexFetcherService.timezone.localdate", return_value=date(2026, 11, 2)),
+			patch("papers.services.fetchers.BaseFetcherService.requests.get", return_value=response) as get,
+		):
+			OpenAlexFetcherService.search("attention", 5, since=date(2026, 10, 1))
+
+		self.assertEqual(get.call_args.kwargs["params"], {
+			"search": "attention",
+			"per-page": 5,
+			"filter": "from_publication_date:2026-10-01,to_publication_date:2026-11-02",
+			"sort": "publication_date:desc",
+		})
+
+
+class OpenAlexCitationTests(SimpleTestCase):
+
+	def test_lists_the_newest_works_citing_a_work(self):
+		response = Mock(json=Mock(return_value={"results": [WORK]}))
+		with (
+			patch("papers.services.fetchers.OpenAlexFetcherService.timezone.localdate", return_value=date(2026, 11, 2)),
+			patch("papers.services.fetchers.BaseFetcherService.requests.get", return_value=response) as get,
+		):
+			papers = OpenAlexFetcherService.citing("W1", date(2026, 10, 1), 10)
+
+		self.assertEqual([paper.external_id for paper in papers], ["W2963403868"])
+		self.assertEqual(get.call_args.kwargs["params"], {
+			"filter": "cites:W1,from_publication_date:2026-10-01,to_publication_date:2026-11-02",
+			"sort": "publication_date:desc",
+			"per-page": 10,
+		})
+
+	def test_finds_a_works_id_by_doi(self):
+		response = Mock(json=Mock(return_value={"id": "https://openalex.org/W2626778328"}))
+		with patch("papers.services.fetchers.BaseFetcherService.requests.get", return_value=response) as get:
+			work_id = OpenAlexFetcherService.work_id("10.48550/arxiv.1706.03762")
+
+		self.assertEqual(work_id, "W2626778328")
+		self.assertEqual(get.call_args.args[0], "https://api.openalex.org/works/doi:10.48550/arxiv.1706.03762")
+
+	def test_an_unknown_doi_has_no_work_id(self):
+		response = Mock(status_code=404)
+		response.raise_for_status.side_effect = HTTPError(response=response)
+		with patch("papers.services.fetchers.BaseFetcherService.requests.get", return_value=response):
+			self.assertIsNone(OpenAlexFetcherService.work_id("10.1/unknown"))

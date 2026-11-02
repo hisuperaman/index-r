@@ -1,7 +1,10 @@
 import logging
 from functools import partial
 
+from datetime import timedelta
+
 from celery import shared_task
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
@@ -31,6 +34,15 @@ def ingest_paper(paper_id: str) -> None:
 	with transaction.atomic():
 		paper.replace_chunks(extracted.chunks)
 		Paper.objects.filter(pk=paper.pk).update(ingested_at=timezone.now())
+
+
+@shared_task
+def requeue_stale_ingestions() -> None:
+	"""Queues again the papers whose ingestion was queued long ago but never finished, such as after a worker restart."""
+	stale = timezone.now() - timedelta(minutes=settings.INGESTION_STALE_MINUTES)
+	papers = Paper.objects.pending().exclude(pdf_url=None).exclude(pdf_url="").filter(created_at__lt=stale)
+	for paper_id in papers.values_list(Paper.fields.id, flat=True):
+		ingest_paper.delay(paper_id)
 
 
 def queue_ingest_paper(paper: Paper) -> None:

@@ -2,21 +2,26 @@ import json
 import logging
 from collections.abc import Iterator
 
+from functools import partial
+
 from django.db import transaction
 from django.db.models import Prefetch
 from django.http import StreamingHttpResponse
+from django.utils import timezone
 from django.utils.decorators import method_decorator
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.filters import SearchFilter
-from rest_framework.mixins import CreateModelMixin, DestroyModelMixin, ListModelMixin
+from rest_framework.mixins import CreateModelMixin, DestroyModelMixin, ListModelMixin, UpdateModelMixin
 from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
 from rest_framework.utils.encoders import JSONEncoder
 from rest_framework.viewsets import GenericViewSet, ModelViewSet
 
 from enums.Paper import PaperLookup
-from enums.Workspace import MessageCitationLookup, MessageRole, WorkspaceLookup, WorkspacePaperLookup
+from enums.Workspace import (
+	MessageCitationLookup, MessageRole, WorkspaceLookup, WorkspacePaperLookup,
+)
 from iam.mixins import UserScopedMixin
 from iam.permissions import IsOwner
 from papers.models import PaperAuthor
@@ -24,11 +29,13 @@ from server.filters import OrderingFilter
 from server.renderers import EventStreamRenderer
 from workspaces.exceptions import AnswerUnavailable
 from workspaces.mixins import WorkspaceScopedMixin
-from workspaces.models import Message, MessageCitation, Workspace, WorkspacePaper
+from workspaces.models import Message, MessageCitation, TrackedTopic, TrackingUpdate, Workspace, WorkspacePaper
 from workspaces.serializers import (
-	MentionedPaperSerializer, MessageSerializer, WorkspacePaperSerializer, WorkspaceSerializer,
+	MentionedPaperSerializer, MessageSerializer, TrackedTopicSerializer, TrackingUpdateSerializer,
+	WorkspacePaperSerializer, WorkspaceSerializer,
 )
 from workspaces.services import AskDelta, AskDone, AskEvent, AskService, AskStatus
+from workspaces.tasks import check_paper_citations, check_tracked_topic
 
 logger = logging.getLogger(__name__)
 
@@ -44,8 +51,10 @@ class WorkspaceViewSet(UserScopedMixin, ModelViewSet):
 	ordering = [WorkspaceLookup.last_activity_at.desc()]
 
 
-class WorkspacePaperViewSet(WorkspaceScopedMixin, ListModelMixin, CreateModelMixin, DestroyModelMixin, GenericViewSet):
-	"""Lists, adds and removes the papers in one of the caller's workspaces."""
+class WorkspacePaperViewSet(
+	WorkspaceScopedMixin, ListModelMixin, CreateModelMixin, UpdateModelMixin, DestroyModelMixin, GenericViewSet,
+):
+	"""Lists, adds, tracks and removes the papers in one of the caller's workspaces."""
 	queryset = WorkspacePaper.objects.select_related(WorkspacePaper.fields.paper).prefetch_related(
 		Prefetch(
 			WorkspacePaperLookup.paper__paper_authors.value,
@@ -56,9 +65,49 @@ class WorkspacePaperViewSet(WorkspaceScopedMixin, ListModelMixin, CreateModelMix
 	lookup_field = WorkspacePaper.fields.paper
 	ordering_fields = [WorkspacePaper.fields.created_at]
 	ordering = [WorkspacePaper.fields.created_at.desc()]
+	http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
 
 	def get_serializer(self, *args, **kwargs):
 		return super().get_serializer(*args, workspace=self.workspace, **kwargs)
+
+	def perform_create(self, serializer):
+		self.check_new_tracking(serializer, was_tracked=False)
+
+	def perform_update(self, serializer):
+		self.check_new_tracking(serializer, was_tracked=serializer.instance.is_tracked)
+
+	def check_new_tracking(self, serializer, was_tracked: bool) -> None:
+		"""Saves the paper, checking it for citations right away when it starts being tracked."""
+		link = serializer.save(workspace=self.workspace)
+		if link.is_tracked and not was_tracked:
+			transaction.on_commit(partial(check_paper_citations.delay, link.paper_id), robust=True)
+
+
+class TrackedTopicViewSet(WorkspaceScopedMixin, ListModelMixin, CreateModelMixin, DestroyModelMixin, GenericViewSet):
+	"""Lists, adds and removes the topics one of the caller's workspaces tracks."""
+	queryset = TrackedTopic.objects.all()
+	serializer_class = TrackedTopicSerializer
+	pagination_class = None
+	ordering = [TrackedTopic.fields.created_at]
+
+	def get_serializer(self, *args, **kwargs):
+		return super().get_serializer(*args, workspace=self.workspace, **kwargs)
+
+	def perform_create(self, serializer):
+		topic = serializer.save(workspace=self.workspace)
+		transaction.on_commit(partial(check_tracked_topic.delay, topic.pk), robust=True)
+
+
+class TrackingUpdateViewSet(WorkspaceScopedMixin, ListModelMixin, GenericViewSet):
+	"""Lists what tracking found for one of the caller's workspaces, newest first, and marks it seen."""
+	queryset = TrackingUpdate.objects.with_details()
+	serializer_class = TrackingUpdateSerializer
+	ordering = [TrackingUpdate.fields.created_at.desc()]
+
+	@action(detail=False, methods=['post'])
+	def seen(self, request, *args, **kwargs):
+		Workspace.objects.filter(pk=self.workspace.pk).update(updates_seen_at=timezone.now())
+		return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class MentionedPaperViewSet(WorkspaceScopedMixin, ListModelMixin, GenericViewSet):

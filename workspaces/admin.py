@@ -1,7 +1,14 @@
 from django.contrib import admin
 
 from enums.Workspace import WorkspaceLookup
-from workspaces.models import Workspace
+from workspaces.models import TrackedTopic, Workspace
+
+
+class TrackedTopicInline(admin.TabularInline):
+	model = TrackedTopic
+	fields = [TrackedTopic.fields.query, TrackedTopic.fields.checked_at]
+	readonly_fields = [TrackedTopic.fields.checked_at]
+	extra = 0
 
 
 @admin.register(Workspace)
@@ -11,3 +18,4 @@ class WorkspaceAdmin(admin.ModelAdmin):
 	search_fields = [Workspace.fields.name, WorkspaceLookup.user__email.value]
 	list_select_related = [Workspace.fields.user]
 	ordering = [Workspace.fields.created_at.desc()]
+	inlines = [TrackedTopicInline]

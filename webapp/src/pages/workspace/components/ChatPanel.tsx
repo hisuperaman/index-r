@@ -1,5 +1,5 @@
 import {useRef} from "react";
-import {MessageSquareTextIcon} from "lucide-react";
+import {ArrowRightIcon, MessageSquareTextIcon, RadarIcon} from "lucide-react";
 import {ErrorPlaceholder} from "@/components";
 import {Button} from "@/components/ui/button";
 import {Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle} from "@/components/ui/empty";
@@ -32,7 +32,34 @@ const MessagesSkeleton = () => (
     </div>
 );
 
-export const ChatPanel = ({workspace}: { workspace: Workspace }) => {
+const sinceFormat = new Intl.DateTimeFormat(undefined, {month: "short", day: "numeric"});
+
+const UpdatesBanner = ({workspace, onShow}: { workspace: Workspace; onShow: () => void }) => {
+    const count = workspace.unseen_update_count;
+    const label = `${count} ${count === 1 ? "update" : "updates"}`;
+    return (
+        <div className="pointer-events-none absolute inset-x-0 top-3 z-10 flex justify-center px-14">
+            <button
+                type="button"
+                onClick={onShow}
+                className="pointer-events-auto flex max-w-full items-center gap-2 rounded-full border border-primary/20 bg-background/90 py-1.5 pr-2 pl-3 text-sm shadow-sm backdrop-blur transition-colors outline-none animate-in fade-in slide-in-from-top-2 hover:bg-secondary focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+                <RadarIcon className="size-4 shrink-0 text-primary"/>
+                <span className="truncate">
+                    <span className="font-medium">{label}</span>
+                    {workspace.updates_seen_at
+                        ? ` since ${sinceFormat.format(new Date(workspace.updates_seen_at))}`
+                        : " from tracking"}
+                </span>
+                <span className="flex shrink-0 items-center gap-0.5 font-medium text-primary">
+                    View <ArrowRightIcon className="size-3.5"/>
+                </span>
+            </button>
+        </div>
+    );
+};
+
+export const ChatPanel = ({workspace, onShowUpdates}: { workspace: Workspace; onShowUpdates: () => void }) => {
     const messages = useMessages(workspace.id);
     const {state, ask, stop, dismiss} = useAsk(workspace.id);
     const sentinel = useRef<HTMLDivElement>(null);
@@ -43,7 +70,8 @@ export const ChatPanel = ({workspace}: { workspace: Workspace }) => {
     const showEmpty = messages.isSuccess && !items.length && state.status === "idle";
 
     return (
-        <div className="flex min-h-0 flex-1 flex-col">
+        <div className="relative flex min-h-0 flex-1 flex-col">
+            {workspace.unseen_update_count > 0 && <UpdatesBanner workspace={workspace} onShow={onShowUpdates}/>}
             <div className="flex min-h-0 flex-1 flex-col-reverse overflow-y-auto overscroll-contain">
                 <div className="mx-auto flex w-full max-w-3xl flex-col-reverse gap-8 px-4 py-6 md:px-6">
                     {state.status !== "idle" && (

@@ -1,4 +1,8 @@
+from datetime import timedelta
+from unittest.mock import patch
+
 from django.test import TestCase
+from django.utils import timezone
 
 from enums.Paper import PaperSource
 from enums.Workspace import MessageRole
@@ -6,7 +10,7 @@ from iam.models import User
 from integrations.exceptions import ToolInputError
 from integrations.services import ResearchToolsService as Tools
 from papers.models import Chunk, Paper
-from workspaces.models import Message, Workspace, WorkspacePaper
+from workspaces.models import Message, TrackedTopic, TrackingUpdate, Workspace, WorkspacePaper
 
 
 class ResearchToolsServiceTests(TestCase):
@@ -98,3 +102,41 @@ class ResearchToolsServiceTests(TestCase):
 		answer = Tools.answer(str(message.pk))
 
 		self.assertEqual((answer["content"], answer["citations"][0]["number"]), ("A [1].", 1))
+
+	def test_tracks_a_topic_and_queues_its_first_check(self):
+		with (
+			patch("integrations.services.ResearchToolsService.check_tracked_topic.delay") as check,
+			self.captureOnCommitCallbacks(execute=True),
+		):
+			topic = Tools.track_topic(self.me.pk, str(self.workspace.pk), "sparse retrieval")
+
+		self.assertEqual(TrackedTopic.objects.get(pk=topic["id"]).workspace, self.workspace)
+		check.assert_called_once()
+		with self.assertRaisesMessage(ToolInputError, "already tracks"):
+			Tools.track_topic(self.me.pk, str(self.workspace.pk), "Sparse retrieval")
+		with self.assertRaisesMessage(ToolInputError, "No workspace with that ID"):
+			Tools.track_topic(self.me.pk, str(self.their_workspace.pk), "x")
+
+	def test_untracks_a_topic_by_its_phrase(self):
+		TrackedTopic.objects.create(workspace=self.workspace, query="Sparse retrieval")
+
+		Tools.untrack_topic(self.me.pk, str(self.workspace.pk), " sparse retrieval ")
+
+		self.assertFalse(TrackedTopic.objects.exists())
+		with self.assertRaisesMessage(ToolInputError, "doesn't track that topic"):
+			Tools.untrack_topic(self.me.pk, str(self.workspace.pk), "sparse retrieval")
+
+	def test_lists_updates_and_topics_optionally_only_unseen(self):
+		topic = TrackedTopic.objects.create(workspace=self.workspace, query="attention")
+		seen = TrackingUpdate.objects.create(workspace=self.workspace, paper=self.public, topic=topic)
+		Workspace.objects.filter(pk=self.workspace.pk).update(updates_seen_at=seen.created_at + timedelta(seconds=1))
+		unseen = TrackingUpdate.objects.create(workspace=self.workspace, paper=self.mine)
+		TrackingUpdate.objects.filter(pk=unseen.pk).update(created_at=timezone.now() + timedelta(minutes=1))
+
+		everything = Tools.list_updates(self.me.pk, str(self.workspace.pk))
+		recent = Tools.list_updates(self.me.pk, str(self.workspace.pk), unseen_only=True)
+
+		self.assertEqual([row["query"] for row in everything["topics"]], ["attention"])
+		self.assertEqual([row["kind"] for row in everything["updates"]], ["new_version", "new_paper"])
+		self.assertEqual([row["id"] for row in recent["updates"]], [str(unseen.id)])
+

@@ -43,6 +43,13 @@ class SemanticScholarFetcherServiceTests(SimpleTestCase):
 			authors=[FetchedAuthor(name="Ashish Vaswani")],
 		)])
 
+	def test_since_limits_to_papers_published_from_that_date(self):
+		response = Mock(json=Mock(return_value={"data": []}))
+		with patch("papers.services.fetchers.BaseFetcherService.requests.get", return_value=response) as get:
+			SemanticScholarFetcherService.search("attention", 5, since=date(2026, 10, 1))
+
+		self.assertEqual(get.call_args.kwargs["params"]["publicationDateOrYear"], "2026-10-01:")
+
 	def test_uses_the_full_publication_date_when_given(self):
 		paper = self.search([{**PAPER, "publicationDate": "2017-06-12"}])[0]
 

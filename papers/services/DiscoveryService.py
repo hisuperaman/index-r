@@ -1,3 +1,5 @@
+from datetime import date
+
 from django.conf import settings
 
 from papers.models import Paper
@@ -14,18 +16,19 @@ class DiscoveryService:
 	LIMIT_PER_PROVIDER = 10
 
 	@classmethod
-	def discover(cls, question: str, queries: list[str] | None = None) -> list[Paper]:
+	def discover(cls, question: str, queries: list[str] | None = None, since: date | None = None) -> list[Paper]:
 		"""Fetches papers for the question's queries, keeps those with a relevant abstract and stores them."""
 		queries = queries or QueryExpansionService.expand(question)
-		return PaperStoreService.store(cls.filter_relevant(question, cls.fetch(queries)))
+		return PaperStoreService.store(cls.filter_relevant(question, cls.fetch(queries, since)))
 
 	@classmethod
-	def fetch(cls, queries: list[str]) -> list[FetchedPaper]:
+	def fetch(cls, queries: list[str], since: date | None = None) -> list[FetchedPaper]:
 		"""Searches every provider for every query, merging the results without duplicates."""
 		papers = [
 			paper
 			for query in queries
-			for paper in OrchestratorFetcherService.search(query, cls.LIMIT_PER_PROVIDER)
+			for paper in OrchestratorFetcherService.search(query, cls.LIMIT_PER_PROVIDER, since)
+			if since is None or (paper.publication_date and paper.publication_date >= since)
 		]
 		return OrchestratorFetcherService.deduplicate(papers)
 

@@ -7,7 +7,7 @@ from django.utils import timezone
 from enums.Paper import PaperSource
 from enums.Workspace import MessageRole
 from papers.models import Paper
-from workspaces.models import Message, Workspace, WorkspacePaper
+from workspaces.models import Message, TrackedTopic, TrackingUpdate, Workspace, WorkspacePaper
 
 
 class WorkspaceWithActivityTests(TestCase):
@@ -72,3 +72,43 @@ class WorkspaceWithActivityTests(TestCase):
 		ordered = Workspace.objects.with_activity().order_by("-_last_activity_at")
 
 		self.assertEqual(list(ordered), [self.empty, self.workspace])
+
+
+class TrackingUpdateQuerySetTests(TestCase):
+	@classmethod
+	def setUpTestData(cls):
+		user = get_user_model().objects.create_user(email="ada@example.com", password="password")
+		cls.workspace = Workspace.objects.create(user=user, name="Retrieval")
+		cls.topic = TrackedTopic.objects.create(workspace=cls.workspace, query="retrieval")
+		cls.papers = [
+			Paper.objects.create(
+				source=PaperSource.ARXIV, external_id=str(index), title=f"Paper {index}", url=f"https://arxiv.org/abs/{index}",
+			)
+			for index in range(3)
+		]
+		now = timezone.now()
+		cls.old, cls.new = (
+			TrackingUpdate.objects.create(workspace=cls.workspace, paper=paper, topic=cls.topic)
+			for paper in cls.papers[:2]
+		)
+		Workspace.objects.filter(pk=cls.workspace.pk).update(created_at=now - timedelta(days=10))
+		TrackingUpdate.objects.filter(pk=cls.old.pk).update(created_at=now - timedelta(days=2))
+		TrackingUpdate.objects.filter(pk=cls.new.pk).update(created_at=now)
+
+	def test_every_update_is_unseen_until_the_workspace_is_seen(self):
+		self.assertEqual(set(TrackingUpdate.objects.unseen()), {self.old, self.new})
+		self.assertEqual(Workspace.objects.with_activity().get(pk=self.workspace.pk).unseen_update_count, 2)
+
+	def test_only_updates_after_the_last_visit_are_unseen(self):
+		Workspace.objects.filter(pk=self.workspace.pk).update(updates_seen_at=timezone.now() - timedelta(days=1))
+
+		self.assertEqual(list(TrackingUpdate.objects.unseen()), [self.new])
+		self.assertEqual(Workspace.objects.with_activity().get(pk=self.workspace.pk).unseen_update_count, 1)
+
+	def test_notes_whether_the_paper_is_already_in_the_workspace(self):
+		WorkspacePaper.objects.create(workspace=self.workspace, paper=self.papers[0])
+
+		in_workspace = {update.paper_id: update._in_workspace for update in TrackingUpdate.objects.with_in_workspace()}
+
+		self.assertEqual(in_workspace, {self.papers[0].pk: True, self.papers[1].pk: False})
+

@@ -30,12 +30,19 @@ const WorkspaceRow = ({workspace}: { workspace: Workspace }) => (
             {getInitials(workspace.name, workspace.name)}
         </div>
         <div className="min-w-0 flex-1">
-            <Link
-                to={Path.getWorkspacePath(workspace.id)}
-                className="line-clamp-1 font-medium outline-none after:absolute after:inset-0 focus-visible:after:ring-3 focus-visible:after:ring-ring/50 focus-visible:after:ring-inset"
-            >
-                {workspace.name}
-            </Link>
+            <div className="flex min-w-0 items-center gap-2">
+                <Link
+                    to={Path.getWorkspacePath(workspace.id)}
+                    className="truncate font-medium outline-none after:absolute after:inset-0 focus-visible:after:ring-3 focus-visible:after:ring-ring/50 focus-visible:after:ring-inset"
+                >
+                    {workspace.name}
+                </Link>
+                {workspace.unseen_update_count > 0 && (
+                    <span className="shrink-0 rounded-full bg-primary px-1.5 text-[0.7rem] font-semibold text-primary-foreground tabular-nums">
+                        {workspace.unseen_update_count} new
+                    </span>
+                )}
+            </div>
             <p className="line-clamp-1 text-sm text-muted-foreground">
                 {workspace.last_question ?? "No questions yet"}
             </p>

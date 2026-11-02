@@ -7,9 +7,9 @@ from django.test import TestCase
 from django.utils import timezone
 
 from enums.Paper import PaperSource
-from enums.Workspace import MessageRole
+from enums.Workspace import MessageRole, TrackingUpdateKind
 from papers.models import Chunk, Paper
-from workspaces.models import Message, MessageCitation, TrackedTopic, Workspace, WorkspacePaper
+from workspaces.models import Message, MessageCitation, TrackedTopic, TrackingUpdate, Workspace, WorkspacePaper
 
 
 class WorkspacePaperTests(TestCase):
@@ -216,3 +216,70 @@ class DeletingAUserTests(TestCase):
 		user.delete()
 
 		self.assertFalse(Paper.objects.filter(pk=paper.pk).exists())
+
+
+class TrackingUpdateTests(TestCase):
+	@classmethod
+	def setUpTestData(cls):
+		user = get_user_model().objects.create_user(email="owner@example.com", password="password")
+		cls.workspace = Workspace.objects.create(user=user, name="Retrieval")
+		cls.topic = TrackedTopic.objects.create(workspace=cls.workspace, query="sparse retrieval")
+		cls.paper, cls.cited = (
+			Paper.objects.create(
+				source=PaperSource.ARXIV, external_id=external_id, title=external_id, url=f"https://arxiv.org/abs/{external_id}",
+			)
+			for external_id in ("2610.00001", "1706.03762")
+		)
+
+	def test_kind_follows_why_it_was_found(self):
+		cases = {
+			TrackingUpdateKind.NEW_PAPER: {"topic": self.topic},
+			TrackingUpdateKind.NEW_CITATION: {"cited_paper": self.cited},
+			TrackingUpdateKind.NEW_VERSION: {},
+		}
+		for kind, reason in cases.items():
+			update = TrackingUpdate.objects.create(workspace=self.workspace, paper=self.paper, **reason)
+			self.assertEqual(update.kind, kind)
+
+	def test_cannot_be_both_a_new_paper_and_a_citation(self):
+		with self.assertRaises(IntegrityError):
+			TrackingUpdate.objects.create(workspace=self.workspace, paper=self.paper, topic=self.topic, cited_paper=self.cited)
+
+	def test_a_paper_cannot_cite_itself(self):
+		with self.assertRaises(IntegrityError):
+			TrackingUpdate.objects.create(workspace=self.workspace, paper=self.paper, cited_paper=self.paper)
+
+	def test_a_new_paper_is_reported_once_per_workspace(self):
+		other_topic = TrackedTopic.objects.create(workspace=self.workspace, query="dense retrieval")
+		TrackingUpdate.objects.create(workspace=self.workspace, paper=self.paper, topic=self.topic)
+
+		with self.assertRaises(IntegrityError):
+			TrackingUpdate.objects.create(workspace=self.workspace, paper=self.paper, topic=other_topic)
+
+	def test_a_citation_is_reported_once_per_workspace(self):
+		TrackingUpdate.objects.create(workspace=self.workspace, paper=self.paper, cited_paper=self.cited)
+
+		with self.assertRaises(IntegrityError):
+			TrackingUpdate.objects.create(workspace=self.workspace, paper=self.paper, cited_paper=self.cited)
+
+	def test_untracking_a_topic_removes_its_updates(self):
+		TrackingUpdate.objects.create(workspace=self.workspace, paper=self.paper, topic=self.topic)
+
+		self.topic.delete()
+
+		self.assertFalse(TrackingUpdate.objects.exists())
+
+	def test_counts_unseen_updates_without_the_annotation(self):
+		seen = TrackingUpdate.objects.create(workspace=self.workspace, paper=self.paper)
+		Workspace.objects.filter(pk=self.workspace.pk).update(updates_seen_at=seen.created_at)
+		TrackingUpdate.objects.create(workspace=self.workspace, paper=self.cited)
+
+		self.assertEqual(Workspace.objects.get(pk=self.workspace.pk).unseen_update_count, 1)
+
+	def test_workspace_paper_is_tracked_once_tracking_started(self):
+		link = WorkspacePaper.objects.create(workspace=self.workspace, paper=self.paper)
+		self.assertFalse(link.is_tracked)
+
+		link.tracked_at = timezone.now()
+		self.assertTrue(link.is_tracked)
+
