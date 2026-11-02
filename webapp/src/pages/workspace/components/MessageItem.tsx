@@ -1,8 +1,5 @@
-import {memo, useState} from "react";
-import {CheckIcon, CopyIcon} from "lucide-react";
-import {LogoMark} from "@/components";
-import {Button} from "@/components/ui/button";
-import {Tooltip, TooltipContent, TooltipTrigger} from "@/components/ui/tooltip";
+import {memo} from "react";
+import {CopyButton, LogoMark} from "@/components";
 import type {Message} from "@/models";
 import {formatRelativeTime} from "@/utils";
 import {AnswerMarkdown} from "./AnswerMarkdown.tsx";
@@ -19,25 +16,6 @@ export const UserBubble = ({content}: { content: string }) => (
 
 export const AssistantAvatar = () => <LogoMark className="mt-0.5 size-7 text-xs"/>;
 
-const CopyButton = ({text}: { text: string }) => {
-    const [copied, setCopied] = useState(false);
-
-    const copy = async () => {
-        await navigator.clipboard.writeText(text);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
-    };
-
-    return (
-        <Tooltip>
-            <TooltipTrigger render={<Button variant="ghost" size="icon-xs" onClick={copy} aria-label="Copy answer"/>}>
-                {copied ? <CheckIcon/> : <CopyIcon/>}
-            </TooltipTrigger>
-            <TooltipContent>{copied ? "Copied" : "Copy"}</TooltipContent>
-        </Tooltip>
-    );
-};
-
 export const MessageItem = memo(({message}: { message: Message }) => {
     if (message.role === "user") return <UserBubble content={message.content}/>;
 
@@ -49,7 +27,7 @@ export const MessageItem = memo(({message}: { message: Message }) => {
                 <SourceList citations={message.citations}/>
                 <div
                     className="mt-2 flex items-center gap-1 text-xs text-muted-foreground opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
-                    <CopyButton text={message.content}/>
+                    <CopyButton text={message.content} label="Copy answer"/>
                     <span>{formatRelativeTime(message.created_at)}</span>
                 </div>
             </div>

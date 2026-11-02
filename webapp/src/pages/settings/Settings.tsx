@@ -3,7 +3,7 @@ import {Controller, type FieldPath, useForm, type UseFormReturn} from "react-hoo
 import {zodResolver} from "@hookform/resolvers/zod";
 import type {AxiosError} from "axios";
 import {Link, Navigate, useParams} from "react-router";
-import {CheckIcon, KeyRoundIcon, LogOutIcon, PaletteIcon, ShieldCheckIcon, UserRoundIcon} from "lucide-react";
+import {CheckIcon, KeyRoundIcon, LogOutIcon, PaletteIcon, PlugIcon, ShieldCheckIcon, UserRoundIcon} from "lucide-react";
 import {FcGoogle} from "react-icons/fc";
 import {AppHeader, ConfirmDialog} from "@/components";
 import {Avatar, AvatarFallback} from "@/components/ui/avatar";
@@ -35,6 +35,7 @@ import {
 } from "@/schemas";
 import {Path, getInitials} from "@/utils";
 import {handleApiError} from "@/utils/errors";
+import {IntegrationsSection} from "./Integrations.tsx";
 import {cn} from "@/lib/utils.ts";
 
 interface TextFieldProps<T extends Record<string, string>> {
@@ -397,6 +398,13 @@ const SECTIONS = [
         icon: ShieldCheckIcon,
         description: "Your password and the accounts you sign in with.",
         render: (user: User) => <SecuritySection user={user}/>,
+    },
+    {
+        id: "integrations",
+        label: "Integrations",
+        icon: PlugIcon,
+        description: "Connect AI assistants to your research.",
+        render: () => <IntegrationsSection/>,
     },
     {
         id: "appearance",
