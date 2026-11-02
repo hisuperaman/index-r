@@ -18,6 +18,7 @@ celery = "==5.6.3"
 redis = "==8.1.0"
 pydantic-ai = "==2.64.0"
 cohere = "==7.3.0"
+mcp = "==2.3.0"
 
 [dev-packages]
 

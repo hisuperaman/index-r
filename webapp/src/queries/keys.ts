@@ -1,5 +1,7 @@
 export const queryKeys = {
     socialAccounts: ["user", "social-accounts"] as const,
+    apiTokens: ["user", "api-tokens"] as const,
+    mcpServer: ["integrations", "mcp"] as const,
     workspaces: ["workspaces", "list"] as const,
     workspaceSearch: (search: string) => ["workspaces", "list", search] as const,
     workspace: (id: string) => ["workspaces", "detail", id] as const,

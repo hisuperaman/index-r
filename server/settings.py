@@ -55,6 +55,7 @@ INSTALLED_APPS = [
 	'iam',
 	'workspaces',
 	'papers',
+	'integrations',
 ]
 
 MIDDLEWARE = [
@@ -235,5 +236,10 @@ DISCOVERY_MIN_SCORE = 0.30
 DISCOVERY_ABSTRACT_MIN_SCORE = 0.25
 # At most this many discovered papers are stored and read per question
 DISCOVERY_MAX_PAPERS = 10
+# MCP server: where clients reach it, and where `manage.py mcp --http` listens
+MCP_PUBLIC_URL = env('MCP_PUBLIC_URL', default='http://localhost:8100/mcp')
+MCP_HOST = env('MCP_HOST', default='127.0.0.1')
+MCP_PORT = env.int('MCP_PORT', default=8100)
+
 # How long an ask waits for newly discovered papers to be ingested before answering without them
 INGESTION_WAIT_SECONDS = 60

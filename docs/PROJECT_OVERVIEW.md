@@ -58,7 +58,7 @@ flowchart TD
     RP --> DIFF["Diff against last snapshot"]
     DIFF --> UP["'X updates since [date]'<br/>shown when the workspace is reopened"]
 
-    MCP["MCP server"] --> TOOLS["search_papers · ask_corpus · track_topic"]
+    MCP["MCP server<br/>(access token)"] --> TOOLS["search_papers · ask · workspace and paper tools"]
     TOOLS --> CLIENTS["MCP clients<br/>(Claude Desktop, IDEs, ...)"]
 ```
 
@@ -151,7 +151,7 @@ abstracts rather than full text, they are rate-limited, and they are too slow to
 | **D. Answer synthesis and traceability** | Grounded answers that flag thin evidence (P0) · inline `[Paper, §Section, p.X]` citations with click-to-source (P0) · multi-paper comparison (P1) |
 | **E. Workspace UI** | Workspace creation, streaming chat with citation chips (P0) · paper list panel (P0) · section-level source viewer (P1) |
 | **F. Live tracking** | "Track this topic/paper" toggle (P1) · background re-poll and diff (P1) · "X updates since [date]" banner (P1) · LLM update digest (P2) |
-| **G. MCP server** | `search_papers`, `ask_corpus` tools (P1) · auth scoped to the user's workspaces (P1) · `track_topic`, `get_citations` (P2) |
+| **G. MCP server** | `search_papers`, `ask` tools (P1) · auth scoped to the user's workspaces (P1) · `track_topic`, `get_citations` (P2) |
 | **H. Auth and accounts** | Signup/login with JWT and per-user data scoping (P0) · `organization_id` reserved on `User` (P0) · org/team accounts (post-MVP) |
 | **I. Admin panel** | Review queue (P1) · corpus browser (P1) · source toggles and key management (P1) · indexing health (P2) |
 
@@ -192,6 +192,7 @@ shows weak precision, the upgrade path is a true-BM25 PostgreSQL extension, whic
 | `Author`, `PaperAuthor` | `papers` | Authors (with optional ORCID) and their order on each paper |
 | `Chunk` | `papers` | A section-aligned piece of a paper: heading, text, page range, index, and a weighted full-text vector |
 | `Citation` | `papers` | A paper → cited paper edge, used for graph expansion and for "new citations" in live tracking |
+| `ApiToken` | `integrations` | A user's named personal access token for MCP clients; only its SHA-256 hash and a short prefix are stored |
 | `TrackedTopic` | `workspaces` | A query a workspace re-runs to find new papers (unique per workspace) |
 
 **Planned:** update events for live tracking, the admin request queue, and `User.organization_id` (added with
@@ -224,7 +225,9 @@ organisations).
 | Workspace UI: workspaces list (search, grouped by activity), chat with streamed cited answers, papers panel (user's papers with the "answer only from these papers" switch, and papers mentioned by answers via `GET /api/workspaces/<id>/mentioned-papers/`), settings | `webapp/` | Done |
 | Private uploads: `POST /api/papers/` (multipart PDF) extracts a paper only its uploader can see; every search, retrieval and workspace add is limited to `Paper.objects.visible_to(user)` | `papers/`, `webapp/` | Done |
 | Admin: papers (search, visibility filter, delete), authors and workspaces in the Django admin | `papers/admin.py`, `workspaces/admin.py` | Done |
-| MCP, live tracking | — | Planned |
+| MCP server (`manage.py mcp`: stdio locally, `--http` for remote clients) with tools `search_papers`, `ask` (with progress), `list_workspaces`, `create_workspace`, `list_workspace_papers`, `get_paper`, `add_paper_to_workspace`, `remove_paper_from_workspace`; each acts as the token's user and sees only `visible_to(user)` papers | `integrations/` | Done |
+| Personal access tokens `/api/integrations/tokens/` (create once-shown, list, revoke) and Settings → Integrations with ready-made client setup | `integrations/`, `webapp/src/pages/settings` | Done |
+| Live tracking | — | Planned |
 
 The service classes are independent of the HTTP layer, so the API, background jobs and the MCP server can all call the
 same code.
@@ -241,7 +244,7 @@ same code.
 | 4–5 | Reranking and synthesis: cross-encoder reranker, grounded answers with enforced citations, citation-graph expansion |
 | 5–6 | Workspace UI: workspaces, streaming chat with citation chips, paper list panel |
 | 6–7 | Admin panel and manual requests: review queue, corpus browser, source management |
-| 7–8 | MCP server: `search_papers` / `ask_corpus`, auth-scoped |
+| 7–8 | MCP server: `search_papers` / `ask` and workspace tools, scoped by personal access token |
 | 8–9 | Live tracking: track toggle, background poller, diff engine, "X updates since" banner |
 | 9–10 | Hardening: error handling, cost/latency guardrails, evaluation set |
 

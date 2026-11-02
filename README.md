@@ -42,6 +42,10 @@ ANTHROPIC_API_KEY=
 COHERE_API_KEY=
 # Optional, but without it Semantic Scholar rate-limits searches heavily
 SEMANTIC_SCHOLAR_API_KEY=
+# Where MCP clients reach the server, and where `manage.py mcp --http` listens
+MCP_PUBLIC_URL=http://localhost:8100/mcp
+MCP_HOST=127.0.0.1
+MCP_PORT=8100
 ```
 
 4. Apply migrations:
@@ -67,6 +71,19 @@ python manage.py runserver
 
 ```bash
 celery -A server worker --queues=default --pool=threads --concurrency=4 --loglevel=INFO
+```
+
+8. Optionally, run the MCP server so AI assistants (Claude Desktop, Claude Code, IDEs) can use IndexR. Create an access
+   token in Settings → Integrations, which also shows the setup for each client. Remote clients connect over HTTP:
+
+```bash
+python manage.py mcp --http
+```
+
+   Or run it locally over stdio, acting as the token's user:
+
+```bash
+INDEXR_ACCESS_TOKEN=ixr_... python manage.py mcp
 ```
 
 ### Frontend Setup
