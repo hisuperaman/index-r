@@ -1,8 +1,8 @@
-from django.contrib.auth import get_user_model
-from django.db import IntegrityError
-from django.db.models import ProtectedError
 from datetime import timedelta
 
+from django.contrib.auth import get_user_model
+from django.db import IntegrityError
+from django.db.models import RestrictedError
 from django.test import TestCase
 from django.utils import timezone
 
@@ -47,7 +47,7 @@ class WorkspacePaperTests(TestCase):
 	def test_mentioned_paper_cannot_be_deleted(self):
 		WorkspacePaper.objects.create(workspace=self.workspace, paper=self.paper)
 
-		with self.assertRaises(ProtectedError):
+		with self.assertRaises(RestrictedError):
 			self.paper.delete()
 
 
@@ -135,7 +135,7 @@ class MessageCitationTests(TestCase):
 	def test_a_cited_chunk_cannot_be_deleted(self):
 		MessageCitation.objects.create(message=self.message, chunk=self.chunk, number=1)
 
-		with self.assertRaises(ProtectedError):
+		with self.assertRaises(RestrictedError):
 			self.chunk.delete()
 
 	def test_deleting_the_message_removes_its_citations(self):
@@ -200,3 +200,19 @@ class MentionedPapersTests(TestCase):
 		flags = dict(self.workspace.mentioned_papers().values_list("title", "_in_workspace"))
 
 		self.assertEqual(flags, {"Paper 1": False, "Paper 2": True})
+
+
+class DeletingAUserTests(TestCase):
+
+	def test_removes_their_private_papers_even_when_cited(self):
+		user = get_user_model().objects.create_user(email="owner@example.com", password="password")
+		paper = Paper.objects.create(source=PaperSource.UPLOAD, external_id="mine", owner=user, title="Mine")
+		chunk = Chunk.objects.create(paper=paper, text="Text.", start_page=1, end_page=1, chunk_index=0)
+		workspace = Workspace.objects.create(user=user, name="Retrieval")
+		WorkspacePaper.objects.create(workspace=workspace, paper=paper)
+		message = Message.objects.create(workspace=workspace, role=MessageRole.ASSISTANT, content="A [1].")
+		MessageCitation.objects.create(message=message, chunk=chunk, number=1)
+
+		user.delete()
+
+		self.assertFalse(Paper.objects.filter(pk=paper.pk).exists())

@@ -1,14 +1,14 @@
 from django.conf import settings
 from django.db.models import Count, Exists, IntegerField, OuterRef, Subquery
 from django.db.models import (
-	CASCADE, PROTECT, BooleanField, CharField, CheckConstraint, ForeignKey, ManyToManyField, PositiveIntegerField, Q, TextField,
+	CASCADE, RESTRICT, BooleanField, CharField, CheckConstraint, ForeignKey, ManyToManyField, PositiveIntegerField, Q, TextField,
 	UniqueConstraint,
 )
 
-from enums.Workspace import MessageRole
+from enums.Workspace import MessageCitationLookup, MessageRole
 from papers.models import Chunk, Paper
 from server.models import BaseModel, PrimaryModel
-from workspaces.querysets import LAST_QUESTION_LENGTH, WorkspaceQuerySet
+from workspaces.querysets import COUNT, LAST_QUESTION_LENGTH, WorkspaceQuerySet
 
 
 class Workspace(PrimaryModel):
@@ -37,13 +37,17 @@ class Workspace(PrimaryModel):
 
 	def mentioned_papers(self):
 		"""Papers this workspace's answers cite, annotated with how often and when last, and whether they're in it."""
-		citations = MessageCitation.objects.filter(chunk__paper=OuterRef("pk"), message__workspace=self).order_by()
+		paper = OuterRef(Paper.fields.id)
+		citations = MessageCitation.objects.filter(chunk__paper=paper, message__workspace=self).order_by()
+		mentioned_at = MessageCitationLookup.message__created_at
 		return Paper.objects.with_authors().filter(Exists(citations)).annotate(
 			_mention_count=Subquery(
-				citations.values("chunk__paper").annotate(count=Count("pk")).values("count"), output_field=IntegerField(),
+				citations.values(MessageCitationLookup.chunk__paper.value)
+				.annotate(count=Count(MessageCitation.fields.id)).values(COUNT),
+				output_field=IntegerField(),
 			),
-			_last_mentioned_at=Subquery(citations.order_by("-message__created_at").values("message__created_at")[:1]),
-			_in_workspace=Exists(WorkspacePaper.objects.filter(workspace=self, paper=OuterRef("pk"))),
+			_last_mentioned_at=Subquery(citations.order_by(mentioned_at.desc()).values(mentioned_at.value)[:1]),
+			_in_workspace=Exists(WorkspacePaper.objects.filter(workspace=self, paper=paper)),
 		)
 
 	@property
@@ -76,7 +80,7 @@ class Workspace(PrimaryModel):
 class WorkspacePaper(BaseModel):
 	"""A paper mentioned in a workspace."""
 	workspace = ForeignKey(Workspace, on_delete=CASCADE, related_name="workspace_papers")
-	paper = ForeignKey(Paper, on_delete=PROTECT, related_name="workspace_papers")
+	paper = ForeignKey(Paper, on_delete=RESTRICT, related_name="workspace_papers")
 
 	class Meta:
 		constraints = [
@@ -113,7 +117,7 @@ class Message(PrimaryModel):
 class MessageCitation(BaseModel):
 	"""A chunk an assistant message cites as [number]."""
 	message = ForeignKey(Message, on_delete=CASCADE, related_name="citations")
-	chunk = ForeignKey(Chunk, on_delete=PROTECT, related_name="message_citations")
+	chunk = ForeignKey(Chunk, on_delete=RESTRICT, related_name="message_citations")
 	number = PositiveIntegerField()
 
 	class Meta:

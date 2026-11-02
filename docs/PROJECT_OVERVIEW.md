@@ -188,7 +188,7 @@ shows weak precision, the upgrade path is a true-BM25 PostgreSQL extension, whic
 | `WorkspacePaper` | `workspaces` | The papers a workspace uses: cited papers are added automatically, and the user can add or remove papers (unique per workspace; a paper in use cannot be deleted). With `Workspace.papers_only` on, answers use only these. All papers ever cited are derived from `MessageCitation` |
 | `Message` | `workspaces` | A chat message in a workspace (`user` or `assistant`) |
 | `MessageCitation` | `workspaces` | A chunk an assistant message cites as `[n]` |
-| `Paper` | `papers` | A paper in the shared corpus: source, external ID, DOI, title, abstract, venue, citation count, publication date and precision, URLs, and when ingestion completed or failed (status is derived) |
+| `Paper` | `papers` | A paper: source, external ID, DOI, title, abstract, venue, citation count, publication date and precision, URLs, and when ingestion completed or failed (status is derived). With an `owner` it is a private upload only that user can see; without one it is in the shared corpus |
 | `Author`, `PaperAuthor` | `papers` | Authors (with optional ORCID) and their order on each paper |
 | `Chunk` | `papers` | A section-aligned piece of a paper: heading, text, page range, index, and a weighted full-text vector |
 | `Citation` | `papers` | A paper → cited paper edge, used for graph expansion and for "new citations" in live tracking |
@@ -222,7 +222,9 @@ organisations).
 | Grounded answers (`AnswerService`: numbered passages → LLM → `[n]` markers mapped to chunks, `Chunk.citation` labels) | `papers/services/` | Done |
 | Ask: `POST /api/workspaces/<id>/messages/` (JSON) and `…/messages/stream/` (server-sent events) run expand → search → discover and wait for ingestion if needed → rerank → answer, saving the assistant message with its `MessageCitation`s (`AskService`) | `workspaces/` | Done |
 | Workspace UI: workspaces list (search, grouped by activity), chat with streamed cited answers, papers panel (user's papers with the "answer only from these papers" switch, and papers mentioned by answers via `GET /api/workspaces/<id>/mentioned-papers/`), settings | `webapp/` | Done |
-| Admin panel, MCP, live tracking | — | Planned |
+| Private uploads: `POST /api/papers/` (multipart PDF) extracts a paper only its uploader can see; every search, retrieval and workspace add is limited to `Paper.objects.visible_to(user)` | `papers/`, `webapp/` | Done |
+| Admin: papers (search, visibility filter, delete), authors and workspaces in the Django admin | `papers/admin.py`, `workspaces/admin.py` | Done |
+| MCP, live tracking | — | Planned |
 
 The service classes are independent of the HTTP layer, so the API, background jobs and the MCP server can all call the
 same code.

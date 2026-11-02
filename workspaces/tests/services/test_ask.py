@@ -61,7 +61,8 @@ class AskServiceTests(TestCase):
 			AskDelta("Heads attend jointly [1]."),
 		])
 		self.discover.assert_not_called()
-		self.retrieve.assert_called_once_with(QUESTION, QUERIES, None)
+		self.retrieve.assert_called_once()
+		self.assertEqual(self.retrieve.call_args.args[:2], (QUESTION, QUERIES))
 		self.stream.assert_called_once_with(QUESTION, [self.chunk])
 
 	def test_saves_the_answer_with_its_citations(self):
@@ -190,3 +191,33 @@ class AskPapersOnlyTests(TestCase):
 		_, discover = self.ask()
 
 		discover.assert_not_called()
+
+
+class AskPrivacyTests(TestCase):
+
+	def test_searches_the_shared_corpus_and_only_the_askers_own_uploads(self):
+		def user(email):
+			return get_user_model().objects.create_user(email=email, password="password")
+
+		def chunk(external_id, owner=None):
+			paper = Paper.objects.create(
+				source=PaperSource.UPLOAD if owner else PaperSource.ARXIV, external_id=external_id, owner=owner,
+				title=f"Paper {external_id}", url="" if owner else f"https://arxiv.org/abs/{external_id}",
+			)
+			return Chunk.objects.create(paper=paper, text="Attention.", start_page=1, end_page=1, chunk_index=0)
+
+		me, someone = user("ada@example.com"), user("grace@example.com")
+		public, mine, theirs = chunk("1"), chunk("2", me), chunk("3", someone)
+		workspace = Workspace.objects.create(user=me, name="Retrieval")
+		question = Message.objects.create(workspace=workspace, role=MessageRole.USER, content=QUESTION)
+
+		with (
+			patch.object(QueryExpansionService, "expand", return_value=QUERIES),
+			patch.object(RetrievalService, "retrieve", return_value=Retrieval(passages=[], candidate_count=9)) as retrieve,
+			patch.object(DiscoveryService, "discover", return_value=[]),
+			patch.object(AnswerService, "stream", return_value=iter([Answer("No.", {}, True)])),
+		):
+			list(AskService.ask(question))
+
+		self.assertQuerySetEqual(retrieve.call_args.args[2], [public, mine], ordered=False)
+		self.assertNotIn(theirs, retrieve.call_args.args[2])

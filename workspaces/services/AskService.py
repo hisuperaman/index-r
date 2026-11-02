@@ -48,7 +48,9 @@ class AskService:
 		queries = QueryExpansionService.expand(text)
 
 		workspace = question.workspace
-		chunks = Chunk.objects.filter(paper__workspaces=workspace) if workspace.papers_only else None
+		chunks = Chunk.objects.visible_to(workspace.user)
+		if workspace.papers_only:
+			chunks = chunks.filter(paper__workspaces=workspace)
 
 		yield AskStatus(AskStage.SEARCHING)
 		retrieval = RetrievalService.retrieve(text, queries, chunks)

@@ -8,6 +8,8 @@ from django.db.models.functions import Cast, Coalesce, ExtractYear, Ln
 from django.db.models.lookups import LessThanOrEqual
 from django.utils import timezone
 
+from enums.Paper import ChunkLookup
+
 
 class AuthorQuerySet(QuerySet):
 
@@ -20,6 +22,14 @@ class AuthorQuerySet(QuerySet):
 
 class PaperQuerySet(QuerySet):
 
+	def public(self):
+		"""Papers in the shared corpus."""
+		return self.filter(owner__isnull=True)
+
+	def visible_to(self, user):
+		"""The shared corpus plus the papers `user` uploaded."""
+		return self.filter(Q(owner__isnull=True) | Q(owner=user.pk))
+
 	def matching(self, source: str, external_id: str, doi: str | None):
 		"""Papers with this source ID, or with this DOI."""
 		match = Q(source=source, external_id=external_id)
@@ -31,7 +41,9 @@ class PaperQuerySet(QuerySet):
 		"""Papers with their authors loaded in byline order."""
 		from papers.models import PaperAuthor
 
-		return self.prefetch_related(Prefetch("paper_authors", queryset=PaperAuthor.objects.select_related("author")))
+		return self.prefetch_related(Prefetch(
+			self.model.fields.paper_authors, queryset=PaperAuthor.objects.select_related(PaperAuthor.fields.author),
+		))
 
 	def pending(self):
 		"""Papers whose ingestion has neither completed nor failed."""
@@ -40,6 +52,14 @@ class PaperQuerySet(QuerySet):
 
 class ChunkQuerySet(QuerySet):
 	SEARCH_CONFIG = "english"
+
+	def public(self):
+		"""Chunks of papers in the shared corpus."""
+		return self.filter(paper__owner__isnull=True)
+
+	def visible_to(self, user):
+		"""Chunks of the shared corpus and of the papers `user` uploaded."""
+		return self.filter(Q(paper__owner__isnull=True) | Q(paper__owner=user.pk))
 	CITATION_WEIGHT = 0.1
 	RECENCY_YEARS = 5
 	RECENCY_BOOST = 0.2
@@ -52,8 +72,8 @@ class ChunkQuerySet(QuerySet):
 		return (
 			self.filter(**{self.model.fields.search_vector: query})
 			.annotate(rank=SearchRank(F(self.model.fields.search_vector), query))
-			.annotate(score=F("rank") * self.citation_boost() * self.recency_boost())
-			.order_by("-score", self.model.fields.id)
+			.annotate(score=F(ChunkLookup.rank.value) * self.citation_boost() * self.recency_boost())
+			.order_by(ChunkLookup.score.desc(), self.model.fields.id)
 		)
 
 	def filter_papers(
@@ -75,13 +95,13 @@ class ChunkQuerySet(QuerySet):
 	@classmethod
 	def citation_boost(cls):
 		"""1 + CITATION_WEIGHT × log10(citations + 1)."""
-		citations = Cast(Coalesce("paper__citation_count", 0), FloatField()) + Value(1.0)
+		citations = Cast(Coalesce(ChunkLookup.paper__citation_count.value, 0), FloatField()) + Value(1.0)
 		return Value(1.0) + Ln(citations) * Value(cls.CITATION_WEIGHT / log(10))
 
 	@classmethod
 	def recency_boost(cls):
 		"""Up to 1 + RECENCY_BOOST for this year's papers, falling to 1 at RECENCY_YEARS old and for undated papers."""
-		age = Value(timezone.now().year) - ExtractYear("paper__publication_date")
+		age = Value(timezone.now().year) - ExtractYear(ChunkLookup.paper__publication_date.value)
 		return Case(
 			When(paper__publication_date__isnull=True, then=Value(1.0)),
 			When(LessThanOrEqual(age, Value(0)), then=Value(1.0 + cls.RECENCY_BOOST)),

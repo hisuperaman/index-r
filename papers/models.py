@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib.postgres.indexes import GinIndex
 from django.db import transaction
 from django.contrib.postgres.search import SearchVectorField
@@ -31,7 +32,7 @@ class Author(BaseModel):
 class Paper(PrimaryModel):
 	source = CharField(max_length=50, choices=PaperSource)
 	external_id = CharField(max_length=255)
-	doi = CharField(max_length=255, blank=True, null=True, unique=True)  # Digital Object Identifier
+	doi = CharField(max_length=255, blank=True, null=True)  # Digital Object Identifier
 	title = TextField()
 	abstract = TextField(blank=True, null=True)
 	venue = CharField(max_length=500, blank=True, null=True)
@@ -42,13 +43,17 @@ class Paper(PrimaryModel):
 		choices=DatePrecision,
 		blank=True, null=True,
 	)
-	url = URLField(max_length=1000)
+	url = URLField(max_length=1000, blank=True)
 	pdf_url = URLField(max_length=1000, blank=True, null=True)
 	authors = ManyToManyField(
 		Author,
 		through="PaperAuthor",
 		related_name="papers",
 	)
+	owner = ForeignKey(
+		settings.AUTH_USER_MODEL, on_delete=CASCADE, blank=True, null=True, related_name="uploaded_papers",
+	)
+	content_hash = CharField(max_length=64, blank=True, null=True)
 	ingested_at = DateTimeField(blank=True, null=True)
 	ingestion_failed_at = DateTimeField(blank=True, null=True)
 	references = ManyToManyField(
@@ -66,6 +71,15 @@ class Paper(PrimaryModel):
 			UniqueConstraint(
 				fields=["source", "external_id"],
 				name="unique_source_external_id",
+			),
+			UniqueConstraint(fields=["doi"], condition=Q(owner__isnull=True), name="unique_public_paper_doi"),
+			UniqueConstraint(fields=["owner", "content_hash"], name="unique_upload_per_owner"),
+			CheckConstraint(
+				condition=(
+						Q(owner__isnull=True) & ~Q(source=PaperSource.UPLOAD)
+						| Q(owner__isnull=False, source=PaperSource.UPLOAD)
+				),
+				name="paper_uploads_are_private",
 			),
 			CheckConstraint(
 				condition=(
@@ -113,6 +127,10 @@ class Paper(PrimaryModel):
 			)
 			for chunk in chunks
 		)
+
+	@property
+	def is_private(self) -> bool:
+		return self.owner_id is not None
 
 	@property
 	def author_names(self) -> list[str]:

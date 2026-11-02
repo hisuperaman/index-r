@@ -3,6 +3,7 @@ from rest_framework.fields import BooleanField, CharField, DateTimeField, Intege
 from rest_framework.relations import PrimaryKeyRelatedField
 from rest_framework.serializers import ModelSerializer
 
+from enums.Paper import PaperLookup
 from papers.models import Paper
 from papers.serializers import ChunkSerializer, PaperSerializer
 from workspaces.models import Message, MessageCitation, Workspace, WorkspacePaper
@@ -25,7 +26,7 @@ class WorkspaceSerializer(ModelSerializer):
 
 class WorkspacePaperSerializer(ModelSerializer):
 	paper = PaperSerializer(read_only=True)
-	paper_id = PrimaryKeyRelatedField(source=WorkspacePaper.fields.paper, queryset=Paper.objects.all(), write_only=True)
+	paper_id = PrimaryKeyRelatedField(source=WorkspacePaper.fields.paper, queryset=Paper.objects.none(), write_only=True)
 
 	class Meta:
 		model = WorkspacePaper
@@ -35,10 +36,12 @@ class WorkspacePaperSerializer(ModelSerializer):
 	def __init__(self, *args, workspace: Workspace | None = None, **kwargs):
 		super().__init__(*args, **kwargs)
 		self.workspace = workspace
+		if workspace is not None:
+			self.fields['paper_id'].queryset = Paper.objects.visible_to(workspace.user)
 
 	def validate(self, data):
 		data = super().validate(data)
-		if WorkspacePaper.objects.filter(workspace=self.workspace, paper=data['paper']).exists():
+		if WorkspacePaper.objects.filter(workspace=self.workspace, paper=data[WorkspacePaper.fields.paper]).exists():
 			raise ValidationError({'paper_id': ["This paper is already in the workspace."]})
 		return data
 
@@ -57,14 +60,14 @@ class MessageSerializer(ModelSerializer):
 
 	class Meta:
 		model = Message
-		read_only_fields = [Message.fields.id, Message.fields.role, Message.fields.created_at, 'citations']
+		read_only_fields = [Message.fields.id, Message.fields.role, Message.fields.created_at, Message.fields.citations]
 		fields = [*read_only_fields, Message.fields.content]
 
 
 class MentionedPaperSerializer(PaperSerializer):
-	mention_count = IntegerField(source='_mention_count', read_only=True)
-	last_mentioned_at = DateTimeField(source='_last_mentioned_at', read_only=True)
-	in_workspace = BooleanField(source='_in_workspace', read_only=True)
+	mention_count = IntegerField(source=PaperLookup.mention_count.value, read_only=True)
+	last_mentioned_at = DateTimeField(source=PaperLookup.last_mentioned_at.value, read_only=True)
+	in_workspace = BooleanField(source=PaperLookup.in_workspace.value, read_only=True)
 
 	class Meta(PaperSerializer.Meta):
 		fields = [*PaperSerializer.Meta.fields, 'mention_count', 'last_mentioned_at', 'in_workspace']

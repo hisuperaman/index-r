@@ -105,10 +105,12 @@ export const WorkspacePapersTab = ({workspace, onAdd}: { workspace: Workspace; o
                                             <FileTextIcon/>
                                         </IconAction>
                                     )}
-                                    <IconAction label="Open paper page" nativeButton={false}
-                                                render={<a href={paper.url} target="_blank" rel="noreferrer"/>}>
-                                        <ExternalLinkIcon/>
-                                    </IconAction>
+                                    {paper.url && (
+                                        <IconAction label="Open paper page" nativeButton={false}
+                                                    render={<a href={paper.url} target="_blank" rel="noreferrer"/>}>
+                                            <ExternalLinkIcon/>
+                                        </IconAction>
+                                    )}
                                     <IconAction label="Remove from workspace" onClick={() => setRemoving(paper)}>
                                         <XIcon/>
                                     </IconAction>

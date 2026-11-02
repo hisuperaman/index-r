@@ -1,5 +1,6 @@
 from .TextExtractorService import TextExtractorService
 from .PaperStoreService import PaperStoreService
+from .PaperUploadService import PaperUploadService
 from .PdfDownloadService import PdfDownloadService
 from .QueryExpansionService import QueryExpansionService
 from .RerankService import RerankService

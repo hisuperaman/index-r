@@ -3,6 +3,7 @@ from unittest.mock import patch
 from django.test import TestCase
 
 from enums.Paper import PaperSource
+from iam.models import User
 from papers.models import Chunk, Paper
 from papers.services import RerankService, Retrieval, RetrievalService
 
@@ -42,6 +43,15 @@ class RetrievalServiceTests(TestCase):
 			_, rerank = self.retrieve(["attention", "dropout"])
 
 		self.assertEqual(len(rerank.call_args.args[1]), 1)
+
+	def test_searches_only_the_shared_corpus_by_default(self):
+		user = User.objects.create_user(email="ada@example.com", password="password")
+		private = Paper.objects.create(source=PaperSource.UPLOAD, external_id="u1", title="Private", owner=user)
+		Chunk.objects.create(paper=private, heading="Attention", text="Private attention.", start_page=1, end_page=1, chunk_index=0)
+
+		retrieval, _ = self.retrieve(["attention"])
+
+		self.assertEqual(retrieval.candidate_count, 1)
 
 	def test_no_queries_finds_no_candidates(self):
 		retrieval, _ = self.retrieve([])
