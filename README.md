@@ -1,3 +1,7 @@
+# IndexR
+
+A vectorless research intelligence platform: it discovers research papers for your question, answers with section- and page-level citations, and tracks what changes in your topic. See the [project overview](docs/PROJECT_OVERVIEW.md) for how it works.
+
 ## Project Setup
 
 ### Backend Setup
@@ -89,3 +93,4 @@ For example, to add the `button` component:
 ```bash
 yarn shadcn add button
 ```
+h

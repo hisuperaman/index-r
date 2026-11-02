@@ -1,0 +1,54 @@
+from datetime import date
+from unittest.mock import Mock, patch
+
+from django.test import SimpleTestCase
+
+from enums.Paper import DatePrecision, PaperSource
+from papers.services.fetchers import SemanticScholarFetcherService
+from papers.services.fetchers.definitions import FetchedAuthor, FetchedPaper
+
+PAPER = {
+	"paperId": "204e3073870fae3d05bcbc2f6a8e263d9b72e776",
+	"title": "Attention is All you Need",
+	"abstract": "The dominant sequence transduction models.",
+	"url": "https://www.semanticscholar.org/paper/204e3073870fae3d05bcbc2f6a8e263d9b72e776",
+	"venue": "Neural Information Processing Systems",
+	"year": 2017,
+	"publicationDate": None,
+	"citationCount": 100000,
+	"externalIds": {"DOI": "10.48550/arXiv.1706.03762", "ArXiv": "1706.03762"},
+	"openAccessPdf": {"url": "", "status": None},
+	"authors": [{"authorId": "40348417", "name": "Ashish Vaswani"}],
+}
+
+
+class SemanticScholarFetcherServiceTests(SimpleTestCase):
+	def search(self, data):
+		response = Mock(json=Mock(return_value={"total": len(data), "data": data}))
+		with patch("papers.services.fetchers.BaseFetcherService.requests.get", return_value=response):
+			return SemanticScholarFetcherService.search("attention", 5)
+
+	def test_maps_results_to_papers(self):
+		self.assertEqual(self.search([PAPER]), [FetchedPaper(
+			source=PaperSource.SEMANTIC_SCHOLAR,
+			external_id="204e3073870fae3d05bcbc2f6a8e263d9b72e776",
+			title="Attention is All you Need",
+			url="https://www.semanticscholar.org/paper/204e3073870fae3d05bcbc2f6a8e263d9b72e776",
+			doi="10.48550/arXiv.1706.03762",
+			abstract="The dominant sequence transduction models.",
+			venue="Neural Information Processing Systems",
+			citation_count=100000,
+			publication_date=date(2017, 1, 1),
+			publication_date_precision=DatePrecision.YEAR,
+			authors=[FetchedAuthor(name="Ashish Vaswani")],
+		)])
+
+	def test_uses_the_full_publication_date_when_given(self):
+		paper = self.search([{**PAPER, "publicationDate": "2017-06-12"}])[0]
+
+		self.assertEqual((paper.publication_date, paper.publication_date_precision), (date(2017, 6, 12), DatePrecision.DAY))
+
+	def test_handles_no_results(self):
+		response = Mock(json=Mock(return_value={"total": 0}))
+		with patch("papers.services.fetchers.BaseFetcherService.requests.get", return_value=response):
+			self.assertEqual(SemanticScholarFetcherService.search("nothing", 5), [])
