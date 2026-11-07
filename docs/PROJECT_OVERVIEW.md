@@ -54,11 +54,12 @@ flowchart TD
     D --> ING["Ingest new papers<br/>open-access PDF → Markdown → section chunks → PostgreSQL"]
     ING --> S
 
-    T["Live tracking worker<br/>(Celery beat)"] --> RP["Re-run discovery for tracked topics"]
-    RP --> DIFF["Diff against last snapshot"]
-    DIFF --> UP["'X updates since [date]'<br/>shown when the workspace is reopened"]
+    T["Daily tracking check<br/>(Celery beat)"] --> RP["Topics: discovery limited to papers<br/>published since the last check"]
+    T --> CIT["Tracked papers: new citing papers (OpenAlex)<br/>and new arXiv versions"]
+    RP --> UP["Tracking updates<br/>'X updates since [date]' when the workspace is reopened"]
+    CIT --> UP
 
-    MCP["MCP server"] --> TOOLS["search_papers · ask_corpus · track_topic"]
+    MCP["MCP server<br/>(access token)"] --> TOOLS["search_papers · ask · workspace and paper tools"]
     TOOLS --> CLIENTS["MCP clients<br/>(Claude Desktop, IDEs, ...)"]
 ```
 
@@ -151,7 +152,7 @@ abstracts rather than full text, they are rate-limited, and they are too slow to
 | **D. Answer synthesis and traceability** | Grounded answers that flag thin evidence (P0) · inline `[Paper, §Section, p.X]` citations with click-to-source (P0) · multi-paper comparison (P1) |
 | **E. Workspace UI** | Workspace creation, streaming chat with citation chips (P0) · paper list panel (P0) · section-level source viewer (P1) |
 | **F. Live tracking** | "Track this topic/paper" toggle (P1) · background re-poll and diff (P1) · "X updates since [date]" banner (P1) · LLM update digest (P2) |
-| **G. MCP server** | `search_papers`, `ask_corpus` tools (P1) · auth scoped to the user's workspaces (P1) · `track_topic`, `get_citations` (P2) |
+| **G. MCP server** | `search_papers`, `ask` tools (P1) · auth scoped to the user's workspaces (P1) · `track_topic`, `get_citations` (P2) |
 | **H. Auth and accounts** | Signup/login with JWT and per-user data scoping (P0) · `organization_id` reserved on `User` (P0) · org/team accounts (post-MVP) |
 | **I. Admin panel** | Review queue (P1) · corpus browser (P1) · source toggles and key management (P1) · indexing health (P2) |
 
@@ -166,7 +167,7 @@ abstracts rather than full text, they are rate-limited, and they are too slow to
 | Citation graph | OpenAlex + Semantic Scholar data, stored as an edge table in PostgreSQL |
 | Discovery sources | Semantic Scholar, OpenAlex, arXiv, Crossref |
 | PDF extraction | `pymupdf4llm` (Markdown with headings and pages); GROBID if structure extraction needs to improve |
-| Reranker | Cross-encoder behind its own interface (e.g. Cohere Rerank, bge-reranker) |
+| Reranker | Cohere Rerank cross-encoder (`RerankService`, `rerank-v3.5`) |
 | LLM | Pluggable provider interface (Claude, GPT or an open model), used for query expansion and synthesis |
 | MCP server | Python `mcp` SDK, calling the same service layer as the API |
 | Background jobs | Celery + Redis + `django-celery-beat` |
@@ -184,15 +185,19 @@ shows weak precision, the upgrade path is a true-BM25 PostgreSQL extension, whic
 | Model | App | Purpose |
 |---|---|---|
 | `User` | `iam` | Email-based account (no username) |
-| `Workspace` | `workspaces` | A user's topic-scoped space; owns its chat and its paper list |
-| `WorkspacePaper` | `workspaces` | Which papers from the shared corpus are mentioned in a workspace (unique per workspace; a paper in use cannot be deleted) |
+| `Workspace` | `workspaces` | A user's topic-scoped space; owns its chat and its paper list. `updates_seen_at` is when its tracking updates were last opened, so the unseen count is derived |
+| `WorkspacePaper` | `workspaces` | The papers a workspace uses: cited papers are added automatically, and the user can add or remove papers (unique per workspace; a paper in use cannot be deleted). `tracked_at` marks a shared paper the workspace tracks for new citations and versions. With `Workspace.papers_only` on, answers use only these. All papers ever cited are derived from `MessageCitation` |
 | `Message` | `workspaces` | A chat message in a workspace (`user` or `assistant`) |
-| `Paper` | `papers` | A paper in the shared corpus: source, external ID, DOI, title, abstract, venue, citation count, publication date and precision, URLs, ingestion status |
+| `MessageCitation` | `workspaces` | A chunk an assistant message cites as `[n]` |
+| `Paper` | `papers` | A paper: source, external ID, DOI, title, abstract, venue, citation count, publication date and precision, URLs, when arXiv last revised it, when its citations were last checked, and when ingestion completed or failed (status is derived). With an `owner` it is a private upload only that user can see; without one it is in the shared corpus |
 | `Author`, `PaperAuthor` | `papers` | Authors (with optional ORCID) and their order on each paper |
 | `Chunk` | `papers` | A section-aligned piece of a paper: heading, text, page range, index, and a weighted full-text vector |
+| `Citation` | `papers` | A paper → cited paper edge, used for graph expansion and for "new citations" in live tracking |
+| `ApiToken` | `integrations` | A user's named personal access token for MCP clients; only its SHA-256 hash and a short prefix are stored |
+| `TrackedTopic` | `workspaces` | A query a workspace re-runs daily to find newly published papers (unique per workspace, up to 10), with when it was last checked |
+| `TrackingUpdate` | `workspaces` | Something tracking found for a workspace: a new paper on a topic (`topic` set), a new paper citing a tracked paper (`cited_paper` set), or a new arXiv version of a tracked paper (neither). The kind is derived; each new paper and citation is reported once per workspace |
 
-**Planned:** `Citation` (paper → cited paper edges, used for graph expansion and for "new citations" in live tracking),
-`TrackedTopic`, update events for live tracking, the admin request queue, and a nullable `User.organization_id`.
+**Planned:** the admin request queue and `User.organization_id` (added with organisations).
 
 ---
 
@@ -204,9 +209,26 @@ shows weak precision, the upgrade path is a true-BM25 PostgreSQL extension, whic
 | Core models: papers, authors, chunks, workspaces, messages, workspace papers | `papers/models.py`, `workspaces/models.py` | Done |
 | Full-text index on chunks (weighted trigger + GIN) | `papers/migrations/0002_add_search_vector_trigger.py` | Done |
 | Paper fetchers for arXiv, OpenAlex and Semantic Scholar, plus an orchestrator that queries them in parallel and de-duplicates | `papers/services/fetchers/` | Done |
-| PDF extraction and section-based chunking (`TextExtractorService`) and chunk storage (`ChunkStoreService`) | `papers/services/` | Done |
-| Workspace CRUD API, workspace dashboard UI | open PRs | In progress |
-| Search endpoint, LLM and reranker interfaces, discovery pipeline, synthesis, admin panel, MCP, live tracking | — | Planned |
+| PDF extraction and section-based chunking (`TextExtractorService`) and chunk storage (`Paper.replace_chunks`) | `papers/services/`, `papers/models.py` | Done |
+| Storing fetched papers and authors without duplicates (`PaperStoreService`), PDF download (`PdfDownloadService`) | `papers/services/` | Done |
+| Chunk search endpoint `GET /api/papers/chunks/search/?q=` with recency/citation boost and year, venue and citation filters (`Chunk.objects.search`, `filter_papers`) | `papers/` | Done |
+| Pluggable LLM interface (`LLMService`, pydantic-ai, `LLM=<provider>:<model>`) | `server/services/` | Done |
+| Celery + Redis worker, `ingest_paper` task (download → extract → store chunks), queued when a new paper with a PDF is stored | `server/celery.py`, `papers/tasks.py` | Done |
+| LLM query expansion (`QueryExpansionService`) and Cohere cross-encoder reranker (`RerankService`) | `papers/services/` | Done |
+| Workspace CRUD API `/api/workspaces/`, scoped to the caller | `workspaces/` | Done |
+| Workspace papers `/api/workspaces/<id>/papers/` (list, add, remove) and chat messages `/api/workspaces/<id>/messages/` (list, post) | `workspaces/` | Done |
+| Permissions: shared `BasePermission` (login required, plus per-request and per-object hooks), `IsOwner`; `UserScopedMixin` scopes views to the caller | `server/permissions.py`, `iam/` | Done |
+| Workspace dashboard UI | — | Planned |
+| Discovery (`DiscoveryService`: expanded queries → all sources → dedupe → abstract filter with Cohere → store and queue ingestion) | `papers/services/` | Done |
+| Corpus check before discovery (`RetrievalService`: multi-query search → rerank → two-gate `needs_discovery`, thresholds in settings) | `papers/services/` | Done |
+| Grounded answers (`AnswerService`: numbered passages → LLM → `[n]` markers mapped to chunks, `Chunk.citation` labels) | `papers/services/` | Done |
+| Ask: `POST /api/workspaces/<id>/messages/` (JSON) and `…/messages/stream/` (server-sent events) run expand → search → discover and wait for ingestion if needed → rerank → answer, saving the assistant message with its `MessageCitation`s (`AskService`) | `workspaces/` | Done |
+| Workspace UI: workspaces list (search, grouped by activity), chat with streamed cited answers, papers panel (user's papers with the "answer only from these papers" switch, and papers mentioned by answers via `GET /api/workspaces/<id>/mentioned-papers/`), settings | `webapp/` | Done |
+| Private uploads: `POST /api/papers/` (multipart PDF) extracts a paper only its uploader can see; every search, retrieval and workspace add is limited to `Paper.objects.visible_to(user)` | `papers/`, `webapp/` | Done |
+| Admin: papers (search, visibility filter, delete), authors and workspaces in the Django admin | `papers/admin.py`, `workspaces/admin.py` | Done |
+| MCP server (`manage.py mcp`: stdio locally, `--http` for remote clients) with tools `search_papers`, `ask` (with progress), `list_workspaces`, `create_workspace`, `list_workspace_papers`, `get_paper`, `add_paper_to_workspace`, `remove_paper_from_workspace`; each acts as the token's user and sees only `visible_to(user)` papers | `integrations/` | Done |
+| Personal access tokens `/api/integrations/tokens/` (create once-shown, list, revoke) and Settings → Integrations with ready-made client setup | `integrations/`, `webapp/src/pages/settings` | Done |
+| Live tracking: topics (`/api/workspaces/<id>/topics/`) and tracked papers (`PATCH …/papers/<paper_id>/ {tracked}`), a daily Celery beat check (`TrackingService`: date-limited discovery per topic, OpenAlex `cites:` for new citing papers, arXiv `id_list` for new versions), updates `…/updates/` with `…/updates/seen/`, the "X updates since" banner and Tracking panel, MCP `track_topic` / `untrack_topic` / `list_updates`, and an hourly requeue of stuck ingestions | `workspaces/`, `papers/services/fetchers/`, `webapp/` | Done |
 
 The service classes are independent of the HTTP layer, so the API, background jobs and the MCP server can all call the
 same code.
@@ -223,7 +245,7 @@ same code.
 | 4–5 | Reranking and synthesis: cross-encoder reranker, grounded answers with enforced citations, citation-graph expansion |
 | 5–6 | Workspace UI: workspaces, streaming chat with citation chips, paper list panel |
 | 6–7 | Admin panel and manual requests: review queue, corpus browser, source management |
-| 7–8 | MCP server: `search_papers` / `ask_corpus`, auth-scoped |
+| 7–8 | MCP server: `search_papers` / `ask` and workspace tools, scoped by personal access token |
 | 8–9 | Live tracking: track toggle, background poller, diff engine, "X updates since" banner |
 | 9–10 | Hardening: error handling, cost/latency guardrails, evaluation set |
 

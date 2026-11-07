@@ -1,4 +1,5 @@
 import logging
+from datetime import date
 from concurrent.futures import ThreadPoolExecutor
 from xml.etree.ElementTree import ParseError
 
@@ -23,17 +24,21 @@ class OrchestratorFetcherService:
 	)
 
 	@classmethod
-	def search(cls, query: str, limit_per_provider: int = 10) -> list[FetchedPaper]:
+	def search(cls, query: str, limit_per_provider: int = 10, since: date | None = None) -> list[FetchedPaper]:
 		"""Returns each provider's papers for `query`, dropping ones an earlier provider already returned."""
 		with ThreadPoolExecutor(max_workers=len(cls.FETCHERS)) as executor:
-			results = executor.map(lambda fetcher: cls.search_provider(fetcher, query, limit_per_provider), cls.FETCHERS)
+			results = executor.map(
+				lambda fetcher: cls.search_provider(fetcher, query, limit_per_provider, since), cls.FETCHERS,
+			)
 			return cls.deduplicate([paper for papers in results for paper in papers])
 
 	@staticmethod
-	def search_provider(fetcher: type[BaseFetcherService], query: str, limit: int) -> list[FetchedPaper]:
+	def search_provider(
+			fetcher: type[BaseFetcherService], query: str, limit: int, since: date | None = None,
+	) -> list[FetchedPaper]:
 		"""Searches one provider, returning no papers if it fails."""
 		try:
-			return fetcher.search(query, limit)
+			return fetcher.search(query, limit, since)
 		except (RequestException, ValueError, ParseError):
 			logger.warning("%s search failed for %r", fetcher.source, query, exc_info=True)
 			return []

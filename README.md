@@ -34,6 +34,20 @@ EMAIL_PORT=587
 EMAIL_USE_TLS=True
 EMAIL_HOST_USER=YOUR_EMAIL_ADDRESS
 EMAIL_HOST_PASSWORD=YOUR_EMAIL_PASSWORD
+REDIS_HOST=localhost
+REDIS_PORT=6379
+# '<provider>:<model>', plus that provider's key: ANTHROPIC_API_KEY, OPENAI_API_KEY or GOOGLE_API_KEY
+LLM=anthropic:claude-sonnet-5-5
+ANTHROPIC_API_KEY=
+COHERE_API_KEY=
+# Optional, but without it Semantic Scholar rate-limits searches heavily
+SEMANTIC_SCHOLAR_API_KEY=
+# Where MCP clients reach the server, and where `manage.py mcp --http` listens
+MCP_PUBLIC_URL=http://localhost:8100/mcp
+MCP_HOST=127.0.0.1
+MCP_PORT=8100
+# Hour (UTC) of the daily live-tracking check
+TRACKING_CHECK_HOUR=6
 ```
 
 4. Apply migrations:
@@ -52,6 +66,39 @@ python manage.py createsuperuser
 
 ```bash
 python manage.py runserver
+```
+
+7. Start Redis, then the Celery worker, which ingests papers in the background (it uses Redis database 0 as its
+   broker):
+
+```bash
+celery -A server worker --queues=default --pool=threads --concurrency=4 --loglevel=INFO
+```
+
+   Also start Celery beat, which runs the daily live-tracking check (at `TRACKING_CHECK_HOUR` UTC, default 6) and
+   requeues papers whose ingestion got stuck:
+
+```bash
+celery -A server beat --loglevel=INFO
+```
+
+   To run the tracking check right away instead of waiting for the schedule:
+
+```bash
+python manage.py check_tracking
+```
+
+8. Optionally, run the MCP server so AI assistants (Claude Desktop, Claude Code, IDEs) can use IndexR. Create an access
+   token in Settings → Integrations, which also shows the setup for each client. Remote clients connect over HTTP:
+
+```bash
+python manage.py mcp --http
+```
+
+   Or run it locally over stdio, acting as the token's user:
+
+```bash
+INDEXR_ACCESS_TOKEN=ixr_... python manage.py mcp
 ```
 
 ### Frontend Setup
@@ -93,4 +140,3 @@ For example, to add the `button` component:
 ```bash
 yarn shadcn add button
 ```
-h

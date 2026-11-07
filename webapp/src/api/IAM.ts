@@ -1,7 +1,7 @@
 import IndexR from "@/api/IndexR.ts";
-import type {LoginResponse, Token, User} from "@/models";
+import type {LoginResponse, SocialAccount, Token, User} from "@/models";
 import {getRefreshToken, onLogout} from "@/account";
-import type {LoginFormData, UserFormData} from "@/schemas";
+import type {LoginFormData, PasswordChangeFormData, PasswordSetFormData, ProfileFormData, UserFormData} from "@/schemas";
 import type {RegisterResponse} from "@/definitions/ResponseBody.ts";
 
 type GoogleAuthBody = {
@@ -46,5 +46,25 @@ export class IAM extends IndexR {
 
     public static getUser(): Promise<User> {
         return IAM.get(`${IAM.authUrl}/user/`);
+    }
+
+    public static updateUser(data: ProfileFormData): Promise<User> {
+        return IAM.patch(`${IAM.authUrl}/user/`, data);
+    }
+
+    public static listSocialAccounts(): Promise<SocialAccount[]> {
+        return IAM.get(`${IAM.authUrl}/social-accounts/`);
+    }
+
+    public static connectGoogle(code: string): Promise<void> {
+        return IAM.post(`${IAM.authUrl}/google/connect/`, {code});
+    }
+
+    public static disconnectSocialAccount(id: number): Promise<void> {
+        return IAM.post(`${IAM.authUrl}/social-accounts/${id}/disconnect/`);
+    }
+
+    public static changePassword(data: PasswordChangeFormData | PasswordSetFormData): Promise<{ detail: string }> {
+        return IAM.post(`${IAM.authUrl}/password/change/`, data);
     }
 }

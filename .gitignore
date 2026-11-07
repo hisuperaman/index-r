@@ -287,3 +287,5 @@ fabric.properties
 .idea/**/dataSources*
 .DS_Store
 chroma
+# Prototype kept locally for reference
+index-r-feat-prototype/

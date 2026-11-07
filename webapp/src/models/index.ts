@@ -1,4 +1,8 @@
 export * from "./User.ts";
+export * from "./Paper.ts";
+export * from "./Workspace.ts";
+export * from "./Message.ts";
+export * from "./Integration.ts";
 
 
 export interface BaseModel {

@@ -1,5 +1,7 @@
+import time
 from abc import ABC, abstractmethod
-from datetime import date
+from datetime import date, datetime
+from http import HTTPStatus
 from typing import Any
 
 import requests
@@ -14,19 +16,29 @@ class BaseFetcherService(ABC):
 	source: PaperSource
 	BASE_URL: str
 	TIMEOUT_SECONDS = 10
+	RATE_LIMIT_WAIT_SECONDS = 1.5
 	MAX_LIMIT: int
 
 	@classmethod
-	def get(cls, params: dict[str, Any]) -> requests.Response:
-		"""Sends a GET to the provider's API and raises on an error status."""
-		response = requests.get(cls.BASE_URL, params=params, timeout=cls.TIMEOUT_SECONDS)
+	def get(cls, params: dict[str, Any], path: str = "") -> requests.Response:
+		"""Sends a GET to the provider's API, retrying once if rate-limited, and raises on an error status."""
+		url = cls.BASE_URL + path
+		response = requests.get(url, params=params, headers=cls.headers(), timeout=cls.TIMEOUT_SECONDS)
+		if response.status_code == HTTPStatus.TOO_MANY_REQUESTS:
+			time.sleep(cls.RATE_LIMIT_WAIT_SECONDS)
+			response = requests.get(url, params=params, headers=cls.headers(), timeout=cls.TIMEOUT_SECONDS)
 		response.raise_for_status()
 		return response
 
 	@classmethod
+	def headers(cls) -> dict[str, str]:
+		"""Extra request headers, such as an API key."""
+		return {}
+
+	@classmethod
 	@abstractmethod
-	def search(cls, query: str, limit: int) -> list[FetchedPaper]:
-		"""Returns up to `limit` papers matching `query`."""
+	def search(cls, query: str, limit: int, since: date | None = None) -> list[FetchedPaper]:
+		"""Returns up to `limit` papers matching `query`, only those published since `since` when given."""
 
 	@classmethod
 	def clamp_limit(cls, limit: int) -> int:
@@ -45,6 +57,14 @@ class BaseFetcherService(ABC):
 			return date(*numbers), DatePrecision.DAY
 		except (TypeError, ValueError):
 			return None, None
+
+	@staticmethod
+	def parse_datetime(value: str | None) -> datetime | None:
+		"""Parses an ISO 8601 timestamp such as '2023-08-02T00:41:18Z'."""
+		try:
+			return datetime.fromisoformat(value.strip()) if value else None
+		except ValueError:
+			return None
 
 	@staticmethod
 	def clean(value: str | None) -> str | None:

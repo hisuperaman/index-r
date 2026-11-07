@@ -1,8 +1,12 @@
 from allauth.account.models import EmailAddress
+from allauth.socialaccount.models import SocialAccount
+from dj_rest_auth.serializers import PasswordChangeSerializer as _PasswordChangeSerializer
 from dj_rest_auth.registration.serializers import RegisterSerializer
-from rest_framework.fields import CharField
+from rest_framework.fields import BooleanField, CharField
+from rest_framework.serializers import ModelSerializer
 
-from enums.User import UserField
+from enums.User import EmailAddressField, SocialAccountField, UserField
+from iam.models import User
 
 
 class CustomRegisterSerializer(RegisterSerializer):
@@ -19,7 +23,7 @@ class CustomRegisterSerializer(RegisterSerializer):
 	def validate_email(self, email):
 		email = super().validate_email(email)
 		# delete old unverified User to avoid IntegrityError due to duplicate email
-		email_obj: EmailAddress = EmailAddress.objects.filter(email=email).select_related("user").first()
+		email_obj: EmailAddress = EmailAddress.objects.filter(email=email).select_related(EmailAddressField.user.value).first()
 		if email_obj and not email_obj.verified:
 			email_obj.user.delete()
 
@@ -35,3 +39,35 @@ class CustomRegisterSerializer(RegisterSerializer):
 		user.first_name = self.validated_data[UserField.first_name.value]
 		user.last_name = self.validated_data[UserField.last_name.value]
 		user.save(update_fields=[UserField.first_name.value, UserField.last_name.value])
+
+
+
+class UserSerializer(ModelSerializer):
+	has_password = BooleanField(source=UserField.has_usable_password.value, read_only=True)
+
+	class Meta:
+		model = User
+		read_only_fields = [UserField.id.value, UserField.email.value, 'has_password']
+		fields = [*read_only_fields, UserField.first_name.value, UserField.last_name.value]
+
+
+
+class PasswordChangeSerializer(_PasswordChangeSerializer):
+	"""Lets a user who signs in only with Google set a first password without an old one."""
+
+	def __init__(self, *args, **kwargs):
+		super().__init__(*args, **kwargs)
+		if self.user and not self.user.has_usable_password():
+			self.old_password_field_enabled = False
+			self.fields.pop('old_password', None)
+
+
+class SocialAccountSerializer(ModelSerializer):
+	email = CharField(source=f'{SocialAccountField.extra_data.value}.email', read_only=True, default=None)
+
+	class Meta:
+		model = SocialAccount
+		read_only_fields = [
+			SocialAccountField.id.value, SocialAccountField.provider.value, 'email', SocialAccountField.date_joined.value,
+		]
+		fields = read_only_fields

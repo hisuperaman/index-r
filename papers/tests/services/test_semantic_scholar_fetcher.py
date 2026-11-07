@@ -1,5 +1,5 @@
 from datetime import date
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 from django.test import SimpleTestCase
 
@@ -43,6 +43,13 @@ class SemanticScholarFetcherServiceTests(SimpleTestCase):
 			authors=[FetchedAuthor(name="Ashish Vaswani")],
 		)])
 
+	def test_since_limits_to_papers_published_from_that_date(self):
+		response = Mock(json=Mock(return_value={"data": []}))
+		with patch("papers.services.fetchers.BaseFetcherService.requests.get", return_value=response) as get:
+			SemanticScholarFetcherService.search("attention", 5, since=date(2026, 10, 1))
+
+		self.assertEqual(get.call_args.kwargs["params"]["publicationDateOrYear"], "2026-10-01:")
+
 	def test_uses_the_full_publication_date_when_given(self):
 		paper = self.search([{**PAPER, "publicationDate": "2017-06-12"}])[0]
 
@@ -52,3 +59,30 @@ class SemanticScholarFetcherServiceTests(SimpleTestCase):
 		response = Mock(json=Mock(return_value={"total": 0}))
 		with patch("papers.services.fetchers.BaseFetcherService.requests.get", return_value=response):
 			self.assertEqual(SemanticScholarFetcherService.search("nothing", 5), [])
+
+
+def response(status: int) -> MagicMock:
+	mock = MagicMock(status_code=status)
+	mock.json.return_value = {"data": []}
+	return mock
+
+
+class SemanticScholarApiKeyTests(SimpleTestCase):
+
+	def test_sends_the_semantic_scholar_key_when_set(self):
+		with (
+			self.settings(SEMANTIC_SCHOLAR_API_KEY="s2-key"),
+			patch("papers.services.fetchers.BaseFetcherService.requests.get", return_value=response(200)) as get,
+		):
+			SemanticScholarFetcherService.search("attention", 3)
+
+		self.assertEqual(get.call_args.kwargs["headers"], {"x-api-key": "s2-key"})
+
+	def test_sends_no_key_when_unset(self):
+		with (
+			self.settings(SEMANTIC_SCHOLAR_API_KEY=None),
+			patch("papers.services.fetchers.BaseFetcherService.requests.get", return_value=response(200)) as get,
+		):
+			SemanticScholarFetcherService.search("attention", 3)
+
+		self.assertEqual(get.call_args.kwargs["headers"], {})

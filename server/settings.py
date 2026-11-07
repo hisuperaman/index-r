@@ -10,10 +10,13 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 import logging
+import os
 from datetime import timedelta
 from os.path import join
 from pathlib import Path
 from sys import modules
+
+from celery.schedules import crontab
 
 from config import env
 
@@ -54,6 +57,7 @@ INSTALLED_APPS = [
 	'iam',
 	'workspaces',
 	'papers',
+	'integrations',
 ]
 
 MIDDLEWARE = [
@@ -153,6 +157,11 @@ REST_FRAMEWORK = {
 	'DEFAULT_PERMISSION_CLASSES': [
 		'rest_framework.permissions.IsAuthenticated',
 	],
+	'DEFAULT_FILTER_BACKENDS': [
+		'server.filters.OrderingFilter',
+	],
+	'DEFAULT_PAGINATION_CLASS': 'server.pagination.CursorPagination',
+	'PAGE_SIZE': 20,
 }
 
 logging.basicConfig(
@@ -166,6 +175,9 @@ REST_AUTH = {
 	"JWT_AUTH_HTTPONLY": False,
 	"TOKEN_MODEL": None,
 	"SESSION_LOGIN": False,
+	"USER_DETAILS_SERIALIZER": "iam.serializers.UserSerializer",
+	"OLD_PASSWORD_FIELD_ENABLED": True,
+	"PASSWORD_CHANGE_SERIALIZER": "iam.serializers.PasswordChangeSerializer",
 }
 
 SIMPLE_JWT = {
@@ -198,3 +210,55 @@ EMAIL_HOST_USER = env('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD')
 
 ACCOUNT_EMAIL_VERIFICATION = "mandatory"
+
+# Redis
+REDIS_HOST = env('REDIS_HOST', default='localhost')
+REDIS_PORT = env.int('REDIS_PORT', default=6379)
+
+# Celery
+# https://docs.celeryq.dev/en/stable/django/first-steps-with-django.html
+
+CELERY_BROKER_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/0"
+CELERY_TASK_DEFAULT_QUEUE = 'default'
+CELERY_BEAT_SCHEDULE = {
+	'check-tracking': {
+		'task': 'workspaces.tasks.check_tracking',
+		'schedule': crontab(hour=env.int('TRACKING_CHECK_HOUR', default=6), minute=0),
+	},
+	'requeue-stale-ingestions': {
+		'task': 'papers.tasks.requeue_stale_ingestions',
+		'schedule': crontab(minute=30),
+	},
+}
+
+# LLM, as '<provider>:<model>' (e.g. 'anthropic:claude-sonnet-5-5'); the provider reads its own API key from the env
+LLM = env('LLM', default=None)
+os.environ.setdefault('PYDANTIC_AI_NO_BANNER', '1')
+
+# Cohere Rerank, the cross-encoder that reranks retrieved passages
+COHERE_API_KEY = env('COHERE_API_KEY', default=None)
+
+# Optional; without a key Semantic Scholar rate-limits searches heavily
+SEMANTIC_SCHOLAR_API_KEY = env('SEMANTIC_SCHOLAR_API_KEY', default=None)
+
+# Discovery runs when fewer chunks than this match the question, or the best reranked passage scores below the minimum
+DISCOVERY_MIN_CANDIDATES = 5
+DISCOVERY_MIN_SCORE = 0.30
+# A discovered paper is ingested only if Cohere scores its title and abstract at least this
+DISCOVERY_ABSTRACT_MIN_SCORE = 0.25
+# At most this many discovered papers are stored and read per question
+DISCOVERY_MAX_PAPERS = 10
+# MCP server: where clients reach it, and where `manage.py mcp --http` listens
+MCP_PUBLIC_URL = env('MCP_PUBLIC_URL', default='http://localhost:8100/mcp')
+MCP_HOST = env('MCP_HOST', default='127.0.0.1')
+MCP_PORT = env.int('MCP_PORT', default=8100)
+
+# Live tracking (the daily check runs at TRACKING_CHECK_HOUR UTC, see CELERY_BEAT_SCHEDULE): a new topic first looks
+# back this many days, and each tracked paper reports at most this many new citing papers per check
+TRACKING_LOOKBACK_DAYS = 30
+TRACKING_MAX_CITATIONS = 10
+# A paper still waiting for ingestion after this long is queued again
+INGESTION_STALE_MINUTES = 60
+
+# How long an ask waits for newly discovered papers to be ingested before answering without them
+INGESTION_WAIT_SECONDS = 60
